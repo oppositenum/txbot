@@ -109,8 +109,9 @@ main{max-width:640px;margin:0 auto;padding:16px}
     <div class="f"><label>调度扫描间隔(秒)</label><input type="number" id="sTick" min="5"></div>
     <div class="f"><label>每日任务开始(时:分)</label><div style="display:flex;gap:6px"><input type="number" id="sHour" min="0" max="23" style="width:50%"><input type="number" id="sMin" min="0" max="59" style="width:50%"></div></div>
     <div class="f"><label>每日错峰范围(分钟)</label><input type="number" id="sSpread" min="0"></div>
+    <div class="f"><label>每日任务(签到)最大同时账号数</label><input type="number" id="sDailyMax" min="1"></div>
   </div>
-  <div class="hint">并发数越小对服务器越友好；几百账号建议 5–10，配合错峰避免同时打请求。</div>
+  <div class="hint">并发数越小对服务器越友好；几百账号建议 5–10，配合错峰避免同时打请求。签到类操作是风控重点盯防的行为模式，"每日任务最大同时账号数"独立限流，建议保持1(全部账号串行签到，一个接一个)，避免被识别成批量刷。</div>
   <div class="f"><label>偷菜白名单（全局，这些 uid 不偷；逗号/空格/换行分隔）</label>
     <textarea id="sWhite" placeholder="例如：1225 3777 51013" style="min-height:70px"></textarea></div>
   <div class="sheetacts"><button class="btn" onclick="hide('mSet')">取消</button><button class="btn p" onclick="saveSettings()">保存</button></div>
@@ -245,14 +246,14 @@ function openBrowser(id) {
 async function openSettings() {
   try {
     const s = await api('/settings');
-    $('#sMax').value = s.maxConcurrent; $('#sTick').value = s.tickSec; $('#sHour').value = s.dailyStartHour; $('#sMin').value = s.dailyStartMin ?? 6; $('#sSpread').value = s.dailySpreadMin;
+    $('#sMax').value = s.maxConcurrent; $('#sTick').value = s.tickSec; $('#sHour').value = s.dailyStartHour; $('#sMin').value = s.dailyStartMin ?? 6; $('#sSpread').value = s.dailySpreadMin; $('#sDailyMax').value = s.dailyMaxConcurrent ?? 1;
     $('#sWhite').value = (s.stealWhitelist || []).join(' ');
     show('mSet');
   } catch (e) { toast(e.message); }
 }
 async function saveSettings() {
   const stealWhitelist = [...new Set(($('#sWhite').value.match(/\d+/g) || []).map(Number))];
-  const body = { maxConcurrent: +$('#sMax').value || 5, tickSec: +$('#sTick').value || 20, dailyStartHour: +$('#sHour').value || 0, dailyStartMin: +$('#sMin').value || 0, dailySpreadMin: +$('#sSpread').value || 120, stealWhitelist };
+  const body = { maxConcurrent: +$('#sMax').value || 5, tickSec: +$('#sTick').value || 20, dailyStartHour: +$('#sHour').value || 0, dailyStartMin: +$('#sMin').value || 0, dailySpreadMin: +$('#sSpread').value || 120, dailyMaxConcurrent: +$('#sDailyMax').value || 1, stealWhitelist };
   try { await api('/settings', { method: 'PUT', body }); hide('mSet'); toast('设置已保存(白名单' + stealWhitelist.length + '人)'); } catch (e) { toast(e.message); }
 }
 async function addWhite(uid, name) {

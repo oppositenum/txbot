@@ -56,6 +56,9 @@ const DEFAULT_SETTINGS = {
   dailyStartHour: 0,     // 每日任务最早开始小时
   dailyStartMin: 6,      // 每日任务开始分钟（避免0点整点，默认0点06分）
   dailySpreadMin: 120,   // 每日任务在开始后多少分钟内随机错峰
+  dailyMaxConcurrent: 1, // 全局同时最多几个账号在跑"每日任务"(签到/每日领取)；
+                         // 独立于 maxConcurrent，故意设更小——签到类操作是风控重点盯防的
+                         // 行为模式，多账号同时刷容易被识别成"批量刷"，串行更安全
   stealWhitelist: [],    // 全局偷菜白名单 uid（遇到这些用户不偷）
 };
 

@@ -367,23 +367,24 @@ async function runDailyJob(id, c) {
   const todo = defs.filter(([k]) => done[k] !== today);
   if (!todo.length) { setJob(id, 'daily', computeDailyNext(acc)); return; }
 
-  // 并行执行
+  // 串行执行（不并行）：签到/每日领取是风控重点盯防的行为模式，同一账号短时间内
+  // 并发打出好几个"领取"类请求不像真人操作，任务间加随机间隔更安全
   let loginFail = 0;
-  const results = await Promise.allSettled(todo.map(([k, label, fn]) => fn().then((r) => ({ k, label, r }))));
-  results.forEach((res, i) => {
-    const [k, label] = todo[i];
-    if (res.status === 'fulfilled') {
-      const text = String(res.value.r);
-      // 请求本身没报错(fulfilled)不代表业务上成功——风控拒绝("系统检测多号刷签到")、
+  for (let i = 0; i < todo.length; i++) {
+    const [k, label, fn] = todo[i];
+    try {
+      const text = String(await fn());
+      // 请求本身没报错不代表业务上成功——风控拒绝("系统检测多号刷签到")、
       // 验证码识别错误等都是这类情况，不能标记为"今天已完成"，否则以后再也不会重试
       const rejected = /失败|系统检测|验证码错误|请稍后再试|操作过于频繁/.test(text);
       if (rejected) log(id, `${label}(未成功，30分钟后重试): ${text.slice(0, 50)}`);
       else { done[k] = today; log(id, `${label}: ${text.slice(0, 40)}`); }
-    } else {
-      if (res.reason && res.reason.code === 'NOT_LOGGED_IN') loginFail++;
-      log(id, `${label}失败: ${res.reason && res.reason.message || res.reason}`);
+    } catch (e) {
+      if (e.code === 'NOT_LOGGED_IN') loginFail++;
+      log(id, `${label}失败: ${e.message || e}`);
     }
-  });
+    if (i < todo.length - 1) await sleep(2000 + Math.random() * 3000); // 任务间隔2-5秒，模拟真人逐个操作
+  }
   store.setStatus(id, { dailyDone: done });
 
   const allDone = defs.every(([k]) => done[k] === today);
@@ -592,10 +593,16 @@ function tick() {
     if (dirty) store.setStatus(acc.id, { jobs });
   }
   due.sort((a, b) => a.nr - b.nr); // 最早到期优先
+  // 跨账号也把"每日任务"(签到/每日领取)单独限流串行——即使总并发槽还有空，
+  // 也不让多个账号同时刷签到类操作，避免被风控识别成"批量刷"
+  let dailyRunning = [...running].filter((k) => k.endsWith(':daily')).length;
+  const dailyCap = s.dailyMaxConcurrent || 1;
   for (const d of due) {
     if (activeCount >= s.maxConcurrent) break;         // 负载均衡：满则等下个 tick
     if (running.has(`${d.id}:${d.type}`)) continue;    // 同账号同任务不重复
+    if (d.type === 'daily' && dailyRunning >= dailyCap) continue; // 每日任务额外限流，留到下轮
     runJob(d.id, d.type);
+    if (d.type === 'daily') dailyRunning++;
   }
 }
 
@@ -634,7 +641,18 @@ async function runCycle(id, manual = true) {
   const acc = store.get(id);
   if (!acc) return;
   if (!running.has(`${id}:farm`)) runJob(id, 'farm');
-  if (jobEnabled(store.get(id), 'daily') && store.get(id).status.lastDaily !== todayStr() && !running.has(`${id}:daily`)) runJob(id, 'daily');
+  if (jobEnabled(acc, 'daily') && acc.status.lastDaily !== todayStr() && !running.has(`${id}:daily`)) {
+    // 手动触发也要遵守 dailyMaxConcurrent 限流：否则用户/前端对多个账号连点"立即执行"
+    // 会绕过 tick() 里的每日任务节流，同样有被风控识别成批量刷的风险
+    const s = store.getSettings();
+    const dailyRunning = [...running].filter((k) => k.endsWith(':daily')).length;
+    if (dailyRunning < (s.dailyMaxConcurrent || 1)) {
+      runJob(id, 'daily');
+    } else {
+      // 标记为"现在到期"，交给下一次 tick() 按限流顺序排队执行，而不是立刻抢跑
+      store.setStatus(id, { jobs: { ...(acc.status.jobs || {}), daily: Date.now() } });
+    }
+  }
 }
 
 // 服务启动恢复：为已启用账号补齐缺失的 job 时间，然后开循环

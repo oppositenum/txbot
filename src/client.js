@@ -38,9 +38,22 @@ class FarmClient {
   // 没有超时的话，一旦某次请求卡死(代理故障/连接挂起)，对应 Promise 永远不 resolve，
   // 调度器该任务的并发锁(running Set)会被永久占用，之后再也不会被重新调度，且不报任何错——
   // 表现为"这个任务突然再也不跑了"，很难排查。所以任何网络请求都必须有超时兜底。
-  _f(url, options = {}) {
+  // 网络层失败(超时/连接被拒/连接重置等，fetch()本身reject)才重试；
+  // HTTP响应本身(哪怕4xx/5xx，或页面里写着"等级不够"/"体力不足"这类业务拒绝)
+  // fetch()都会正常resolve，不会走进这个重试分支——避免对业务拒绝做无意义的重复请求。
+  async _f(url, options = {}) {
     if (this.dispatcher) options = { ...options, dispatcher: this.dispatcher };
-    return fetch(url, { signal: AbortSignal.timeout(this.timeoutMs || 15000), ...options });
+    const maxRetries = this.maxRetries ?? 2; // 最多重试2次(共3次尝试)
+    let lastErr;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fetch(url, { signal: AbortSignal.timeout(this.timeoutMs || 15000), ...options });
+      } catch (e) {
+        lastErr = e;
+        if (attempt < maxRetries) await sleep(500 * (attempt + 1) + Math.random() * 300); // 递增退避
+      }
+    }
+    throw lastErr;
   }
 
   cookieHeader() {

@@ -34,10 +34,13 @@ class FarmClient {
     this.dispatcher = (proxy && ProxyAgent) ? new ProxyAgent(proxy) : null;
   }
 
-  // 统一 fetch：自动附带代理 dispatcher
+  // 统一 fetch：自动附带代理 dispatcher + 超时保护
+  // 没有超时的话，一旦某次请求卡死(代理故障/连接挂起)，对应 Promise 永远不 resolve，
+  // 调度器该任务的并发锁(running Set)会被永久占用，之后再也不会被重新调度，且不报任何错——
+  // 表现为"这个任务突然再也不跑了"，很难排查。所以任何网络请求都必须有超时兜底。
   _f(url, options = {}) {
     if (this.dispatcher) options = { ...options, dispatcher: this.dispatcher };
-    return fetch(url, options);
+    return fetch(url, { signal: AbortSignal.timeout(this.timeoutMs || 15000), ...options });
   }
 
   cookieHeader() {

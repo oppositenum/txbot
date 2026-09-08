@@ -186,7 +186,11 @@ async function runGoldFightJob(id) {
   const cap = Math.max(1, cfg.goldFightPollMaxMin || 5) * 60;
   let bosses;
   try { bosses = await g.getFightStatus(maxLv); }
-  catch (e) { setJob(id, 'goldfight', Date.now() + jitter(cap * 1000)); return; }
+  catch (e) {
+    log(id, `圣衣打怪巡检出错: ${e.message}，${Math.round(cap / 60)}分钟后重试`);
+    setJob(id, 'goldfight', Date.now() + jitter(cap * 1000));
+    return;
+  }
   let killed = 0;
   for (const b of bosses.filter((x) => x.available)) {
     const r = await g.fightBoss(b.mapId, b.bossId);
@@ -199,7 +203,10 @@ async function runGoldFightJob(id) {
   const waitSec = cooling.length ? Math.min(cap, Math.max(20, Math.min(...cooling) + 3)) : cap;
   const next = Date.now() + jitter(waitSec * 1000, 0.1);
   setJob(id, 'goldfight', next);
-  if (killed) log(id, `圣衣打怪完成，击杀${killed}只；下次 ${new Date(next).toLocaleTimeString()}`);
+  // 每次巡检都留痕（哪怕没打到），否则用户看不到任务在运行的证据
+  const nextStr = new Date(next).toLocaleTimeString();
+  if (killed) log(id, `圣衣打怪完成，击杀${killed}只(候选${bosses.length}只)；下次 ${nextStr}`);
+  else log(id, `圣衣打怪巡检: ${bosses.length}只候选怪均在冷却，最近${cooling.length ? Math.ceil(Math.min(...cooling) / 60) + '分钟' : '未知'}后刷新；下次 ${nextStr}`);
 }
 
 // ==================== friendland job（我的友情地，独立并发）====================
@@ -215,7 +222,7 @@ async function runFriendLandJob(id) {
     if (cfg.water && t.needWater) { await c.waterFriendLand(t.landId, t.tuid); fn++; }
     if (cfg.dig && t.needDig) { await c.digFriendLand(t.landId); fn++; }
   }
-  if (fn) log(id, `友情地护理 ${fn} 次`);
+  log(id, fn ? `友情地护理 ${fn} 次` : `友情地巡检: ${tasks.length}块地均无需处理`);
   setJob(id, 'friendland', pollNext(cfg));
 }
 
@@ -237,7 +244,7 @@ async function runStealJob(id) {
       await sleep(1500 + Math.random() * 2000);
     }
   }
-  if (stolen) log(id, `偷菜 ${stolen} 块${skipped ? ` (白名单跳过${skipped}人)` : ''}`);
+  log(id, stolen ? `偷菜 ${stolen} 块${skipped ? ` (白名单跳过${skipped}人)` : ''}` : `偷菜巡检: 无可偷的地${skipped ? `(白名单跳过${skipped}人)` : ''}`);
   setJob(id, 'steal', pollNext(cfg));
 }
 
@@ -269,7 +276,7 @@ async function runCareJob(id) {
   if (cfg.kill) tasks.push(runPass(2, 'needKill', KILL_DONE, false).then((n) => ['杀虫', n]));
   const done = (await Promise.allSettled(tasks)).filter((r) => r.status === 'fulfilled').map((r) => r.value);
   const total = done.reduce((s, [, n]) => s + n, 0);
-  if (total) log(id, '帮好友(并发): ' + done.map(([l, n]) => l + n).join(' '));
+  log(id, total ? '帮好友(并发): ' + done.map(([l, n]) => l + n).join(' ') : '帮好友巡检: 暂无好友需要护理');
   setJob(id, 'care', pollNext(cfg));
 }
 
@@ -446,17 +453,33 @@ async function runJob(id, type, retried = false) {
     try { await relogin(id); c = getClient(store.get(id)); } catch (e) { log(id, '重登失败: ' + e.message); }
   }
   try {
-    if (type === 'farm') await runFarmJob(id, c);
-    else if (type === 'friendland') await runFriendLandJob(id);
-    else if (type === 'steal') await runStealJob(id);
-    else if (type === 'care') await runCareJob(id);
-    else if (type === 'daily') await runDailyJob(id, c);
-    else if (type === 'pasture') await runPastureJob(id, c);
-    else if (type === 'pettrain') await runPetTrainJob(id, c);
-    else if (type === 'grab') await runGrabJob(id);
-    else if (type === 'goldfight') await runGoldFightJob(id);
+    const task = (async () => {
+      if (type === 'farm') await runFarmJob(id, c);
+      else if (type === 'friendland') await runFriendLandJob(id);
+      else if (type === 'steal') await runStealJob(id);
+      else if (type === 'care') await runCareJob(id);
+      else if (type === 'daily') await runDailyJob(id, c);
+      else if (type === 'pasture') await runPastureJob(id, c);
+      else if (type === 'pettrain') await runPetTrainJob(id, c);
+      else if (type === 'grab') await runGrabJob(id);
+      else if (type === 'goldfight') await runGoldFightJob(id);
+    })();
+    // 看门狗兜底：单次请求已有超时保护，这里再兜一层，防止任何未预见的挂起
+    // (死循环/异常累积)把 running 锁永久卡死、该任务从此再也不被调度
+    const timeout = new Promise((_, reject) => setTimeout(() => {
+      const e = new Error(`${type} 执行超过20分钟未完成，判定为卡死`);
+      e.code = 'JOB_TIMEOUT';
+      reject(e);
+    }, 20 * 60 * 1000));
+    await Promise.race([task, timeout]);
     store.setStatus(id, { state: 'idle' });
   } catch (e) {
+    if (e.code === 'JOB_TIMEOUT') {
+      log(id, `❌ ${e.message}，强制重新排期`);
+      store.setStatus(id, { state: 'error', lastResult: `${type}执行超时` });
+      setJob(id, type, Date.now() + jitter(10 * 60000));
+      return; // finally 仍会执行，释放锁
+    }
     if (e.code === 'NOT_LOGGED_IN' && acc.useruid && acc.password && !retried) {
       running.delete(key); activeCount--;
       try { await relogin(id); } catch (le) {

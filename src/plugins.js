@@ -243,11 +243,13 @@ class GoldClient extends FarmClient {
   static GUILD_MAP_IDS = new Set([28, 31]); // 圣殿花园、神域保卫战
 
   // 返回该等级范围内全部 boss(含冷却中的，供调度器算下次唤醒时间)
+  // 按地图入场门槛(<=maxLevel)筛选地图；地图内所有怪都打，不再额外按怪物自身等级过滤
+  // (同一地图常混有远超入场门槛的怪，例如"陽-末日试炼"入场29级但内有30/32级的怪，也要打)
   async getFightStatus(maxLevel = 29) {
     const areas = (await this.getAreaList()).filter((a) => a.level <= maxLevel && !GoldClient.GUILD_MAP_IDS.has(a.mapId));
     const results = await Promise.all(areas.map((a) => this.getAreaBosses(a.mapId).catch(() => [])));
     const bosses = [];
-    results.forEach((list, i) => { for (const b of list) if (b.level <= maxLevel) bosses.push({ ...b, areaName: areas[i].name }); });
+    results.forEach((list, i) => { for (const b of list) bosses.push({ ...b, areaName: areas[i].name }); });
     return bosses;
   }
 

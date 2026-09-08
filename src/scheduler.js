@@ -372,8 +372,17 @@ async function runDailyJob(id, c) {
   const results = await Promise.allSettled(todo.map(([k, label, fn]) => fn().then((r) => ({ k, label, r }))));
   results.forEach((res, i) => {
     const [k, label] = todo[i];
-    if (res.status === 'fulfilled') { done[k] = today; log(id, `${label}: ${String(res.value.r).slice(0, 40)}`); }
-    else { if (res.reason && res.reason.code === 'NOT_LOGGED_IN') loginFail++; log(id, `${label}失败: ${res.reason && res.reason.message || res.reason}`); }
+    if (res.status === 'fulfilled') {
+      const text = String(res.value.r);
+      // 请求本身没报错(fulfilled)不代表业务上成功——风控拒绝("系统检测多号刷签到")、
+      // 验证码识别错误等都是这类情况，不能标记为"今天已完成"，否则以后再也不会重试
+      const rejected = /失败|系统检测|验证码错误|请稍后再试|操作过于频繁/.test(text);
+      if (rejected) log(id, `${label}(未成功，30分钟后重试): ${text.slice(0, 50)}`);
+      else { done[k] = today; log(id, `${label}: ${text.slice(0, 40)}`); }
+    } else {
+      if (res.reason && res.reason.code === 'NOT_LOGGED_IN') loginFail++;
+      log(id, `${label}失败: ${res.reason && res.reason.message || res.reason}`);
+    }
   });
   store.setStatus(id, { dailyDone: done });
 

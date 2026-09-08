@@ -274,7 +274,9 @@ async function runCareJob(id) {
   const fix = (s) => s.replace(/&amp;/g, '&');
   const WEED_DONE = /除光|没有.*杂草|清理完|不需要除草|没有杂草/;
   const KILL_DONE = /杀光|没有.*害虫|都健康|不需要杀虫|没有害虫/;
-  const runPass = async (oper, needKey, doneRe, perLandOnce) => {
+
+  // 除草/杀虫：同一地块反复调用同一链接直到"除光/杀光"文案出现
+  const runRepeatPass = async (oper, needKey, doneRe) => {
     const pc = new FarmClient(acc.cookie, { proxy: acc.proxy });
     let n = 0;
     for (const f of await pc.getRankAll(oper, 15)) {
@@ -283,16 +285,42 @@ async function runCareJob(id) {
         if (n >= cap) break;
         const link = l[needKey];
         if (!link) continue;
-        if (perLandOnce) { await pc.req(fix(link)).then(FarmClient.resultText); n++; await sleep(900 + Math.random() * 1000); }
-        else { for (let i = 0; i < 80 && n < cap; i++) { const r = await pc.req(fix(link)).then(FarmClient.resultText); n++; if (doneRe.test(r) || /失败|不能|已被/.test(r)) break; await sleep(1200 + Math.random() * 1200); } }
+        for (let i = 0; i < 80 && n < cap; i++) {
+          const r = await pc.req(fix(link)).then(FarmClient.resultText);
+          n++;
+          if (doneRe.test(r) || /失败|不能|已被/.test(r)) break;
+          await sleep(1200 + Math.random() * 1200);
+        }
       }
     }
     return n;
   };
+
+  // 浇水：响应自带">>给下一块地浇水"直达链接(带下一个landId)，顺着链走完该好友全部待浇地块，
+  // 不用像除草/杀虫那样逐块重查好友地块列表(且好友地块可能远超翻页上限，链式跟随天然不受限)
+  const runWaterPass = async (oper) => {
+    const pc = new FarmClient(acc.cookie, { proxy: acc.proxy });
+    let n = 0;
+    for (const f of await pc.getRankAll(oper, 15)) {
+      if (n >= cap) break;
+      const firstLand = (await pc.getFriendFarm(f.uid, 3)).find((l) => l.needWater); // 翻页找入口(有的好友地块很多，第一页未必有)
+      if (!firstLand) continue;
+      let link = fix(firstLand.needWater);
+      for (let i = 0; i < 100 && link && n < cap; i++) {
+        const html = await pc.req(link);
+        n++;
+        const next = html.match(/water\.do\?landId=\d+&(?:amp;)?tuid=\d+/);
+        link = next ? fix(next[0]) : null;
+        if (link) await sleep(700 + Math.random() * 700);
+      }
+    }
+    return n;
+  };
+
   const tasks = [];
-  if (cfg.water) tasks.push(runPass(3, 'needWater', null, true).then((n) => ['浇水', n]));
-  if (cfg.weed) tasks.push(runPass(1, 'needWeed', WEED_DONE, false).then((n) => ['除草', n]));
-  if (cfg.kill) tasks.push(runPass(2, 'needKill', KILL_DONE, false).then((n) => ['杀虫', n]));
+  if (cfg.water) tasks.push(runWaterPass(3).then((n) => ['浇水', n]));
+  if (cfg.weed) tasks.push(runRepeatPass(1, 'needWeed', WEED_DONE).then((n) => ['除草', n]));
+  if (cfg.kill) tasks.push(runRepeatPass(2, 'needKill', KILL_DONE).then((n) => ['杀虫', n]));
   const done = (await Promise.allSettled(tasks)).filter((r) => r.status === 'fulfilled').map((r) => r.value);
   const total = done.reduce((s, [, n]) => s + n, 0);
   log(id, total ? '帮好友(并发): ' + done.map(([l, n]) => l + n).join(' ') : '帮好友巡检: 暂无好友需要护理');

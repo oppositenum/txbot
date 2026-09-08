@@ -201,6 +201,72 @@ class GoldClient extends FarmClient {
   async practice() { return R(await this.req('practiceMess.do')); }         // 修炼
   async dig(digType = 2) { return R(await this.req(`areaDig.do?digType=${digType}`)); } // 搜寻/打怪
   async arena() { return this.req('arenaInfo.do'); }                        // 竞技
+
+  // 全部地图列表(圣地档 t=1..6)：{name, level(进入等级), mapId}[]
+  async getAreaList() {
+    const tiers = await Promise.all([1, 2, 3, 4, 5, 6].map((t) => this.req(`areas.do?t=${t}`)));
+    const seen = new Set();
+    const areas = [];
+    for (const html of tiers) {
+      for (const m of html.matchAll(/([一-龥Ａ-ｚA-Za-z0-9\-]+)\((\d+)级\)<a href="areaDig\.do\?id=(\d+)"/g)) {
+        const id = +m[3];
+        if (seen.has(id)) continue;
+        seen.add(id);
+        areas.push({ name: m[1], level: +m[2], mapId: id });
+      }
+    }
+    return areas;
+  }
+
+  // 某地图当前的 boss 状态：[{name, level, mapId, bossId(null=冷却中), available, respawnSec}]
+  async getAreaBosses(mapId) {
+    const html = await this.req(`areaDig.do?id=${mapId}&digType=5`);
+    const blocks = html.split(/(?=★[一-龥]+\(\d+级\))/).slice(1);
+    const bosses = [];
+    for (const b of blocks) {
+      const m = b.match(/★([一-龥]+)\((\d+)级\)/);
+      if (!m) continue;
+      const bossIdM = b.match(/name="bossId"\s+value="(\d+)"/);
+      const cd = strip(b).match(/(\d+)分钟(\d+)秒后复活|(\d+)秒后复活/);
+      bosses.push({
+        name: m[1], level: +m[2], mapId,
+        bossId: bossIdM ? +bossIdM[1] : null,
+        available: !!bossIdM,
+        respawnSec: cd ? (cd[1] ? (+cd[1] * 60 + +cd[2]) : +cd[3]) : null,
+      });
+    }
+    return bosses;
+  }
+
+  // 汇总所有"进入等级 <= maxLevel"的地图，找出当前等级<=maxLevel且存活可攻击的boss
+  // 公会地图(需占领该区域的公会成员身份才能打，个人打不了；来自玩家攻略帖确认)
+  static GUILD_MAP_IDS = new Set([28, 31]); // 圣殿花园、神域保卫战
+
+  // 返回该等级范围内全部 boss(含冷却中的，供调度器算下次唤醒时间)
+  async getFightStatus(maxLevel = 29) {
+    const areas = (await this.getAreaList()).filter((a) => a.level <= maxLevel && !GoldClient.GUILD_MAP_IDS.has(a.mapId));
+    const results = await Promise.all(areas.map((a) => this.getAreaBosses(a.mapId).catch(() => [])));
+    const bosses = [];
+    results.forEach((list, i) => { for (const b of list) if (b.level <= maxLevel) bosses.push({ ...b, areaName: areas[i].name }); });
+    return bosses;
+  }
+
+  async getFightTargets(maxLevel = 29) {
+    return (await this.getFightStatus(maxLevel)).filter((b) => b.available);
+  }
+
+  // 攻击 boss；返回 {ok, reason, text}。已知失败原因：等级过高不能进入该地图、非该区域占领公会成员、体力不足
+  async fightBoss(mapId, bossId) {
+    const html = await this.req('fightingBoss.do', { method: 'POST', body: `mapId=${mapId}&bossId=${bossId}` });
+    const t = strip(html);
+    const i = t.search(/战斗|胜利|失败|获得|挑战/);
+    const text = (i >= 0 ? t.slice(i, i + 200) : t.slice(0, 150)).trim();
+    if (/等级过高/.test(text)) return { ok: false, reason: '等级过高不能进入', text };
+    if (/不是.*公会成员|公会/.test(text)) return { ok: false, reason: '非占领公会成员', text };
+    if (/体力不足/.test(text)) return { ok: false, reason: '体力不足', text };
+    if (/胜利|获得|击败|击杀/.test(text)) return { ok: true, reason: '战斗胜利', text };
+    return { ok: false, reason: '未知结果', text };
+  }
 }
 
 module.exports = { PastureClient, PetClient, GoldClient };

@@ -56,6 +56,7 @@ function jobEnabled(acc, type) {
   if (type === 'pasture') return !!(cfg.pastureLoop || cfg.pioneer);
   if (type === 'pettrain') return !!cfg.petTrain;
   if (type === 'grab') return !!cfg.grabPoints;
+  if (type === 'goldfight') return !!cfg.goldFight;
   return false;
 }
 
@@ -176,6 +177,30 @@ async function runFarmJob(id, c) {
 }
 
 const pollNext = (cfg) => Date.now() + jitter(Math.max(1, cfg.farmPollMaxMin || 5) * 60000);
+
+// ==================== goldfight job（圣衣打怪，只打配置等级以下，独立并发）====================
+async function runGoldFightJob(id) {
+  const acc = store.get(id); const cfg = acc.config;
+  const g = new GoldClient(acc.cookie, { proxy: acc.proxy });
+  const maxLv = cfg.goldFightMaxLevel || 29;
+  const cap = Math.max(1, cfg.goldFightPollMaxMin || 5) * 60;
+  let bosses;
+  try { bosses = await g.getFightStatus(maxLv); }
+  catch (e) { setJob(id, 'goldfight', Date.now() + jitter(cap * 1000)); return; }
+  let killed = 0;
+  for (const b of bosses.filter((x) => x.available)) {
+    const r = await g.fightBoss(b.mapId, b.bossId);
+    if (r.ok) { killed++; log(id, `圣衣打怪[${b.areaName}]${b.name}(Lv${b.level}): 胜利`); }
+    else log(id, `圣衣打怪[${b.areaName}]${b.name}(Lv${b.level})未打成: ${r.reason}`);
+    await sleep(600 + Math.random() * 600);
+  }
+  // 按最近的怪物冷却剩余时间精确唤醒，封顶 goldFightPollMaxMin
+  const cooling = bosses.filter((b) => !b.available && b.respawnSec != null).map((b) => b.respawnSec);
+  const waitSec = cooling.length ? Math.min(cap, Math.max(20, Math.min(...cooling) + 3)) : cap;
+  const next = Date.now() + jitter(waitSec * 1000, 0.1);
+  setJob(id, 'goldfight', next);
+  if (killed) log(id, `圣衣打怪完成，击杀${killed}只；下次 ${new Date(next).toLocaleTimeString()}`);
+}
 
 // ==================== friendland job（我的友情地，独立并发）====================
 async function runFriendLandJob(id) {
@@ -429,6 +454,7 @@ async function runJob(id, type, retried = false) {
     else if (type === 'pasture') await runPastureJob(id, c);
     else if (type === 'pettrain') await runPetTrainJob(id, c);
     else if (type === 'grab') await runGrabJob(id);
+    else if (type === 'goldfight') await runGoldFightJob(id);
     store.setStatus(id, { state: 'idle' });
   } catch (e) {
     if (e.code === 'NOT_LOGGED_IN' && acc.useruid && acc.password && !retried) {
@@ -464,7 +490,7 @@ function tick() {
     if (!acc.config.enabled || acc.status.needLogin) continue;
     const jobs = acc.status.jobs || {};
     let dirty = false;
-    for (const type of ['farm', 'friendland', 'steal', 'care', 'daily', 'pasture', 'pettrain', 'grab']) {
+    for (const type of ['farm', 'friendland', 'steal', 'care', 'daily', 'pasture', 'pettrain', 'grab', 'goldfight']) {
       if (!jobEnabled(acc, type)) continue;
       if (running.has(`${acc.id}:${type}`)) continue; // 该账号该任务已在跑（同账号不同任务可并行）
       let nr = jobs[type];
@@ -504,6 +530,7 @@ function start(id) {
   if (acc.config.pastureLoop || acc.config.pioneer) jobs.pasture = Date.now() + Math.random() * 60000;
   if (acc.config.petTrain) jobs.pettrain = Date.now() + Math.random() * 30000;
   if (acc.config.grabPoints) jobs.grab = computeGrabNext(acc.config, acc);
+  if (acc.config.goldFight) jobs.goldfight = Date.now() + Math.random() * 30000;
   store.update(id, { config: { enabled: true } });
   store.setStatus(id, { jobs });
   startLoop();
@@ -533,6 +560,7 @@ function resume() {
     if ((acc.config.pastureLoop || acc.config.pioneer) && jobs.pasture == null) jobs.pasture = Date.now() + Math.random() * 60000;
     if (acc.config.petTrain && jobs.pettrain == null) jobs.pettrain = Date.now() + Math.random() * 30000;
     if (acc.config.grabPoints && jobs.grab == null) jobs.grab = computeGrabNext(acc.config, acc);
+    if (acc.config.goldFight && jobs.goldfight == null) jobs.goldfight = Date.now() + Math.random() * 30000;
     store.setStatus(acc.id, { jobs, state: 'idle' });
   }
   startLoop();

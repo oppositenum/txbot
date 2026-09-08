@@ -134,6 +134,8 @@ main{max-width:640px;margin:0 auto;padding:16px}
     <div class="f"><label>抢积分·每天开始(时:分)</label><div style="display:flex;gap:6px"><input type="number" id="cGrabHour" min="0" max="23" style="width:50%"><input type="number" id="cGrabMin" min="0" max="59" style="width:50%"></div></div>
     <div class="f"><label>抢积分·突发时长(分钟)</label><input type="number" id="cGrabWin" min="1"></div>
     <div class="f"><label>抢积分·轮询间隔(秒)</label><input type="number" id="cGrabPoll" min="2"></div>
+    <div class="f"><label>圣衣打怪·只打等级≤</label><input type="number" id="cGoldMaxLv" min="1"></div>
+    <div class="f"><label>圣衣打怪·兜底轮询上限(分钟)</label><input type="number" id="cGoldPoll" min="1"></div>
   </div>
   <div class="f"><label>宠物培养属性(可多选，轮换培养；某个练不了自动换下一个)</label>
     <div id="cPetTrainWts" style="display:flex;flex-wrap:wrap;gap:8px">
@@ -199,6 +201,7 @@ const FEATURES = [
   ['sowAutoBuy','库存不足自动购种','指定/推荐种子没库存时自动去商店买够'],
   ['farmSignin','农场签到','每日自动签到(OCR验证码)'],['groupSignin','群组签到','每日自动签到(OCR验证码)'],['qqSignin','QQ签到','每日自动签到'],
   ['petTrain','宠物培养','定时循环培养指定属性'],
+  ['goldFight','圣衣打怪','只打配置等级以下的怪，自动跳过公会地图'],
   ['grabPoints','抢积分','每天定时突发抢聊天室字卡积分'],
 ];
 
@@ -282,7 +285,7 @@ async function loadAccounts() {
       </div>
       <div class="meta" style="margin-top:6px">任务: ${feats}</div>
       ${overviewLine(st)}
-      ${a.config.enabled ? `<div class="meta">下次唤醒: 农场 ${nextT(jobs.farm)}${jobEnabledUI(a,'daily') ? ' · 每日 ' + nextT(jobs.daily) : ''}${(a.config.pastureLoop||a.config.pioneer) ? ' · 牧场 ' + nextT(jobs.pasture) : ''}${a.config.petTrain ? ' · 宠物培养 ' + nextT(jobs.pettrain) : ''}${a.config.grabPoints ? ' · 抢积分 ' + nextT(jobs.grab) : ''}</div>` : ''}
+      ${a.config.enabled ? `<div class="meta">下次唤醒: 农场 ${nextT(jobs.farm)}${jobEnabledUI(a,'daily') ? ' · 每日 ' + nextT(jobs.daily) : ''}${(a.config.pastureLoop||a.config.pioneer) ? ' · 牧场 ' + nextT(jobs.pasture) : ''}${a.config.petTrain ? ' · 宠物培养 ' + nextT(jobs.pettrain) : ''}${a.config.grabPoints ? ' · 抢积分 ' + nextT(jobs.grab) : ''}${a.config.goldFight ? ' · 圣衣打怪 ' + nextT(jobs.goldfight) : ''}</div>` : ''}
       <div class="meta">上次: ${st.lastRun ? new Date(st.lastRun).toLocaleTimeString() + ' · ' + esc(st.lastResult) : '—'}</div>
       <div class="acts">
         <button class="btn s p" onclick="runNow('${a.id}')">立即执行</button>
@@ -354,6 +357,7 @@ function openCfg(id) {
   const wts = (a.config.petTrainWts && a.config.petTrainWts.length) ? a.config.petTrainWts.map(String) : [String(a.config.petTrainWt || 3)];
   document.querySelectorAll('#cPetTrainWts input').forEach((i) => (i.checked = wts.includes(i.value)));
   $('#cGrabRoom').value = a.config.grabRoom || 696; $('#cGrabHour').value = a.config.grabHour ?? 12; $('#cGrabMin').value = a.config.grabMin ?? 0; $('#cGrabWin').value = a.config.grabWindowMin || 10; $('#cGrabPoll').value = a.config.grabPollSec || 5;
+  $('#cGoldMaxLv').value = a.config.goldFightMaxLevel || 29; $('#cGoldPoll').value = a.config.goldFightPollMaxMin || 5;
   const sel = $('#cSeed');
   const baseOpts = '<option value="auto">自动（种子袋数量最多）</option><option value="recommend">按推荐种子种（等级推荐，随等级变化）</option>';
   sel.innerHTML = baseOpts + `<option value="${a.config.sowSeedsId}">加载种子目录中…</option>`;
@@ -369,7 +373,8 @@ function collectCfg() {
   const petTrainWts = [...document.querySelectorAll('#cPetTrainWts input:checked')].map((i) => +i.value);
   if (!petTrainWts.length) petTrainWts.push(3);
   const config = { farmPollMaxMin: +$('#cPoll').value || 30, sowSeedsId: $('#cSeed').value, stealMax: +$('#cStealMax').value || 10, careMax: +$('#cCareMax').value || 10, pastureIntervalMin: +$('#cPastureInt').value || 120, pioneerScene: +$('#cPioScene').value || 1, pioneerAction: +$('#cPioAction').value || 1, petTrainWts, petTrainWt: petTrainWts[0],
-    grabRoom: +$('#cGrabRoom').value || 696, grabHour: +$('#cGrabHour').value || 0, grabMin: +$('#cGrabMin').value || 0, grabWindowMin: +$('#cGrabWin').value || 10, grabPollSec: +$('#cGrabPoll').value || 5 };
+    grabRoom: +$('#cGrabRoom').value || 696, grabHour: +$('#cGrabHour').value || 0, grabMin: +$('#cGrabMin').value || 0, grabWindowMin: +$('#cGrabWin').value || 10, grabPollSec: +$('#cGrabPoll').value || 5,
+    goldFightMaxLevel: +$('#cGoldMaxLv').value || 29, goldFightPollMaxMin: +$('#cGoldPoll').value || 5 };
   document.querySelectorAll('#cfgOpts input[data-k]').forEach((i) => (config[i.dataset.k] = i.checked));
   return config;
 }
@@ -511,12 +516,14 @@ const PLUGIN_BTNS = {
   pasture: [['dailyAward','每日礼包'],['harvestAll','一键收获'],['feedAnimals','喂食动物'],['cleanAnimals','洗澡'],['restock','补栏饲养'],['feedDog','喂狗'],['pioneer','拓荒'],['fattenAll','催肥'],['nurseAll','育儿']],
   pet: [['dailyAllowance','每日津贴'],['attendance','报到全勤'],['harvestWork','种花收获'],['feed','喂食']],
   petTrain: [['3','培养智慧'],['2','培养斗志'],['1','培养气质'],['4','培养体贴']],
-  gold: [['dailyReward','每日奖励'],['practice','修炼'],['dig','搜寻打怪']],
+  gold: [['dailyReward','每日奖励'],['practice','修炼'],['dig','搜寻打怪'],['fightOnce','打怪(≤29级)']],
 };
 async function renderPlugin(plugin) {
   const b = $('#tabBody');
   b.innerHTML = '<div class="gInfo" id="pgInfo">加载状态中…</div><div class="acts" id="pgActs"></div><div id="pgDetail"></div>';
-  $('#pgActs').innerHTML = PLUGIN_BTNS[plugin].map(([t, n]) => `<button class="btn s" onclick="pluginAct('${plugin}','${t}',{},()=>renderPlugin('${plugin}'))">${n}</button>`).join('') +
+  const curAcc = accounts.find((x) => x.id === curId) || {};
+  const goldMaxLv = curAcc.config?.goldFightMaxLevel || 29;
+  $('#pgActs').innerHTML = PLUGIN_BTNS[plugin].map(([t, n]) => `<button class="btn s" onclick="pluginAct('${plugin}','${t}',${t === 'fightOnce' ? `{maxLevel:${goldMaxLv}}` : '{}'},()=>renderPlugin('${plugin}'))">${n}</button>`).join('') +
     (plugin === 'pasture' ? `<button class="btn s p" onclick="pastureHarvestEach()">逐舍收获</button>` : '');
   try {
     const r = await api('/accounts/' + curId + '/plugin/' + plugin, { method: 'POST', body: { type: 'info' } });
@@ -536,7 +543,15 @@ async function renderPlugin(plugin) {
           '<div class="acts" style="margin-top:8px">' + PLUGIN_BTNS.petTrain.map(([wt, n]) => `<button class="btn s" onclick="pluginAct('pet','train',{wt:${wt}},()=>renderPlugin('pet'))">${n}</button>`).join('') + '</div>';
       }
     }
-    else $('#pgInfo').innerHTML = `圣衣 <b>Lv${i.level}</b> · 铜币 <b>${Number(i.coin||0).toLocaleString()}</b> · ${esc(i.hp||'')} · 小宇宙 ${i.cosmos||0}`;
+    else {
+      $('#pgInfo').innerHTML = `圣衣 <b>Lv${i.level}</b> · 铜币 <b>${Number(i.coin||0).toLocaleString()}</b> · ${esc(i.hp||'')} · 小宇宙 ${i.cosmos||0}`;
+      const fs = await api('/accounts/' + curId + '/plugin/gold', { method: 'POST', body: { type: 'fightStatus', maxLevel: goldMaxLv } }).then((r) => r.result).catch(() => null);
+      if (fs) {
+        const avail = fs.filter((b) => b.available).length;
+        $('#pgDetail').innerHTML = `<div class="hint">≤${goldMaxLv}级怪物(${fs.length}只)，可打 ${avail} 只</div>` +
+          fs.map((b) => `<div class="li"><div class="n">${esc(b.areaName)} · ${esc(b.name)} <small>Lv${b.level}</small></div><div class="r"><small style="color:${b.available?'var(--acc)':'var(--dim)'}">${b.available ? '可攻击' : (b.respawnSec!=null ? Math.ceil(b.respawnSec/60)+'分钟后刷新' : '冷却中')}</small></div></div>`).join('');
+      }
+    }
   } catch (e) { $('#pgInfo').innerHTML = `<span style="color:var(--err)">状态加载失败: ${esc(e.message)}</span>`; }
 }
 async function pastureHarvestEach() {

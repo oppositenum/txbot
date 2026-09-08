@@ -43,6 +43,10 @@ const DEFAULT_CONFIG = {
   grabMin: 0,            // 分钟
   grabWindowMin: 10,     // 突发轮询持续分钟
   grabPollSec: 3,        // 轮询间隔秒(抢卡要频繁，越小越不易错过)
+  // ===== 圣衣打怪（只打指定等级以下的怪，账号圣衣等级需能进入该地图，公会地图会自动跳过）=====
+  goldFight: false,
+  goldFightMaxLevel: 29,   // 只打这个等级及以下的怪
+  goldFightPollMaxMin: 5,  // 兜底轮询上限(分钟)，实际按怪物冷却剩余时间精确唤醒
 };
 
 const DEFAULT_SETTINGS = {

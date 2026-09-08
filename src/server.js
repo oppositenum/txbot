@@ -243,7 +243,15 @@ const PLUGIN_ACTIONS = {
   pet: { info: (c) => c.getInfo(), dailyAllowance: (c) => c.dailyAllowance(), attendance: (c) => c.attendance(),
     harvestWork: async (c) => { const n = await c.harvestWork(); return `种花收获 ${n} 处花圃`; }, feed: (c) => c.feed(),
     trainInfo: (c) => c.getTrain(), train: async (c, p) => { const r = await c.train(p.wt || 3); return r.reason; } },
-  gold: { info: (c) => c.getInfo(), dailyReward: (c) => c.dailyReward(), practice: (c) => c.practice(), dig: (c, p) => c.dig(p.digType || 2) },
+  gold: { info: (c) => c.getInfo(), dailyReward: (c) => c.dailyReward(), practice: (c) => c.practice(), dig: (c, p) => c.dig(p.digType || 2),
+    fightStatus: (c, p) => c.getFightStatus(p.maxLevel || 29),
+    fightOnce: async (c, p) => {
+      const targets = await c.getFightTargets(p.maxLevel || 29);
+      if (!targets.length) return '当前无可打的怪(都在冷却中)';
+      const results = [];
+      for (const t of targets) { const r = await c.fightBoss(t.mapId, t.bossId); results.push(`${t.name}(Lv${t.level}):${r.ok ? '胜利' : r.reason}`); }
+      return results.join(' / ');
+    } },
 };
 app.post('/api/accounts/:id/action', async (req, res) => {
   const acc = store.get(req.params.id);

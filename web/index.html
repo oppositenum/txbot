@@ -196,7 +196,7 @@ const FEATURES = [
   ['pastureDaily','牧场每日','每日礼包+收获(每天一次)'],['petDaily','宠物每日','每日报道津贴(每天一次)'],
   ['goldDaily','圣衣每日','每日奖励宝箱(每天一次)'],['pastureLoop','牧场定时收获','按间隔巡检收获圈舍'],
   ['pioneer','神殿拓荒','定时发起拓荒(到点自动掉落)'],
-  ['sowAutoBuy','库存不足自动购种','指定种子没库存时自动去商店买够'],
+  ['sowAutoBuy','库存不足自动购种','指定/推荐种子没库存时自动去商店买够'],
   ['farmSignin','农场签到','每日自动签到(OCR验证码)'],['groupSignin','群组签到','每日自动签到(OCR验证码)'],['qqSignin','QQ签到','每日自动签到'],
   ['petTrain','宠物培养','定时循环培养指定属性'],
   ['grabPoints','抢积分','每天定时突发抢聊天室字卡积分'],
@@ -354,12 +354,15 @@ function openCfg(id) {
   const wts = (a.config.petTrainWts && a.config.petTrainWts.length) ? a.config.petTrainWts.map(String) : [String(a.config.petTrainWt || 3)];
   document.querySelectorAll('#cPetTrainWts input').forEach((i) => (i.checked = wts.includes(i.value)));
   $('#cGrabRoom').value = a.config.grabRoom || 696; $('#cGrabHour').value = a.config.grabHour ?? 12; $('#cGrabMin').value = a.config.grabMin ?? 0; $('#cGrabWin').value = a.config.grabWindowMin || 10; $('#cGrabPoll').value = a.config.grabPollSec || 5;
-  const sel = $('#cSeed'); sel.innerHTML = '<option value="auto">自动（种子袋数量最多）</option><option value="' + a.config.sowSeedsId + '">加载种子目录中…</option>';
+  const sel = $('#cSeed');
+  const baseOpts = '<option value="auto">自动（种子袋数量最多）</option><option value="recommend">按推荐种子种（等级推荐，随等级变化）</option>';
+  sel.innerHTML = baseOpts + `<option value="${a.config.sowSeedsId}">加载种子目录中…</option>`;
   api('/accounts/' + id + '/seed-catalog').then((cat) => {
-    sel.innerHTML = '<option value="auto">自动（种子袋数量最多）</option>' + cat.map((s) =>
+    sel.innerHTML = baseOpts + cat.map((s) =>
       `<option value="${s.seedsId}" ${String(s.seedsId) === String(a.config.sowSeedsId) ? 'selected' : ''}>${esc(s.name)} Lv${s.level} 库存${s.count} ${s.price}币${s.gift ? ' 🎁礼物' : ''}</option>`
     ).join('');
-  }).catch(() => { sel.innerHTML = '<option value="auto">自动（种子袋数量最多）</option><option value="' + a.config.sowSeedsId + '" selected>加载失败，仍用 seedsId=' + a.config.sowSeedsId + '</option>'; });
+    if (['auto', 'recommend'].includes(a.config.sowSeedsId)) sel.value = a.config.sowSeedsId;
+  }).catch(() => { sel.innerHTML = baseOpts + `<option value="${a.config.sowSeedsId}" selected>加载失败，仍用 seedsId=${a.config.sowSeedsId}</option>`; if (['auto', 'recommend'].includes(a.config.sowSeedsId)) sel.value = a.config.sowSeedsId; });
   show('mCfg');
 }
 function collectCfg() {

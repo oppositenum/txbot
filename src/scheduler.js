@@ -111,20 +111,36 @@ async function runFarmJob(id, c) {
     const emptyLands = f2.lands.filter((l) => l.empty);
     if (emptyLands.length) {
       let bag = await c.getBag();
-      let seed = cfg.sowSeedsId === 'auto' ? bag.sort((a, b) => b.count - a.count)[0] : bag.find((s) => s.seedsId === +cfg.sowSeedsId);
-      // 指定了具体种子但库存不足 → 自动去商店补货
-      if (cfg.sowSeedsId !== 'auto' && cfg.sowAutoBuy !== false) {
-        const have = seed ? seed.count : 0;
-        const need = emptyLands.length - have;
-        if (need > 0) {
-          const catalog = await c.getSeedCatalog();
-          const item = catalog.find((x) => x.seedsId === +cfg.sowSeedsId);
-          if (!item) log(id, `种子(id=${cfg.sowSeedsId})不在商店目录，无法自动购买`);
-          else if (item.gift) log(id, `种子[${item.name}]是礼物种子，商店无法直接购买`);
-          else {
-            const r = await c.buySeeds(item.seedsId, need);
-            if (/成功购买/.test(r)) { log(id, `补货[${item.name}]x${need}成功`); bag = await c.getBag(); seed = bag.find((s) => s.seedsId === +cfg.sowSeedsId); }
-            else log(id, `补货[${item.name}]失败: ${r.slice(0, 50)}`);
+      let seed = null;
+      if (cfg.sowSeedsId === 'auto') {
+        seed = bag.sort((a, b) => b.count - a.count)[0];
+      } else {
+        // 'recommend'=按 myInfo.do 官方"推荐种植"(随账号等级变化)；否则是配置里指定的具体 seedsId
+        let targetId = null, targetName = null;
+        if (cfg.sowSeedsId === 'recommend') {
+          const rec = await c.getRecommendedSeed().catch(() => null);
+          if (rec) { targetId = rec.seedsId; targetName = rec.name; log(id, `官方推荐种植: ${rec.name}(id${rec.seedsId})`); }
+          else log(id, '未获取到官方推荐种子');
+        } else {
+          targetId = +cfg.sowSeedsId;
+        }
+        if (targetId) {
+          seed = bag.find((s) => s.seedsId === targetId);
+          // 库存不足 → 自动去商店补货
+          if (cfg.sowAutoBuy !== false) {
+            const have = seed ? seed.count : 0;
+            const need = emptyLands.length - have;
+            if (need > 0) {
+              const catalog = await c.getSeedCatalog();
+              const item = catalog.find((x) => x.seedsId === targetId) || (targetName ? { seedsId: targetId, name: targetName, gift: false } : null);
+              if (!item) log(id, `种子(id=${targetId})不在商店目录，无法自动购买`);
+              else if (item.gift) log(id, `种子[${item.name}]是礼物种子，商店无法直接购买`);
+              else {
+                const r = await c.buySeeds(item.seedsId, need);
+                if (/成功购买/.test(r)) { log(id, `补货[${item.name}]x${need}成功`); bag = await c.getBag(); seed = bag.find((s) => s.seedsId === targetId); }
+                else log(id, `补货[${item.name}]失败: ${r.slice(0, 50)}`);
+              }
+            }
           }
         }
       }

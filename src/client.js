@@ -342,6 +342,23 @@ class FarmClient {
     const html = await this.req(`shop.do?category=${category}&lv=${lv}&pn=${pn}`);
     return FarmClient.parseShopItems(html);
   }
+  // 官方"推荐种植"(myInfo.do 页面按账号等级给出的等级种子)：{seedsId, name, price, sellPrice, needLevel}
+  async getRecommendedSeed() {
+    const html = await this.req('myInfo.do');
+    const seedsId = +((html.match(/推荐种植[:：]<a href="seedsInfo\.do\?seedsId=(\d+)"/) || [])[1] || 0);
+    if (!seedsId) return null;
+    const info = await this.req(`seedsInfo.do?seedsId=${seedsId}`);
+    const t = strip(info);
+    return {
+      seedsId,
+      name: (t.match(/种子详细介绍\s*([一-龥A-Za-z0-9]+)/) || [])[1] || `种子${seedsId}`,
+      price: +(t.match(/种子价格[:：](\d+)金币/) || [])[1] || 0,
+      sellPrice: +(t.match(/果实售价[:：](\d+)金币/) || [])[1] || 0,
+      needLevel: +(t.match(/所需等级[:：](\d+)级/) || [])[1] || 0,
+      gift: false,
+    };
+  }
+
   // 完整种子目录：档0-5(普通种子，按等级分档)全部翻页并行拉取 + 礼物种子(category=1)
   // 用于「种植种子」下拉可选全部种子(不局限于当前种子袋里已有的)
   async getSeedCatalog() {

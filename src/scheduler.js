@@ -6,7 +6,14 @@ const { PastureClient, PetClient, GoldClient } = require('./plugins');
 const { farmSignin, groupSignin, qqSignin } = require('./signin');
 const store = require('./store');
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// 本地时区的"今天"日期字符串。注意：不能用 toISOString()，那是 UTC——
+// 服务器在 GMT+8 时区时，本地时间00:00~07:59这段窗口 UTC 还没跨天，
+// 用 toISOString() 会把"今天"误判成"昨天"，导致每日任务在本地新的一天
+// 头8小时里被误认为"已经做过"而跳过，实际要等到本地早上8点(UTC跨天)才补做。
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 const jitter = (ms, pct = 0.15) => ms + ms * pct * (Math.random() * 2 - 1);
 
 const logs = {};       // id -> [{ts,msg}]

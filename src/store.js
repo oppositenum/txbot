@@ -15,6 +15,7 @@ const DEFAULT_CONFIG = {
   sowAutoBuy: true,      // 指定种子但库存不足时，自动去商店购买补足
   weed: true, kill: true, water: true, muck: false,
   friendLand: true,      // 收自己的友情地
+  farmTasks: true,       // 自动完成日常任务(taskOrders.do)，库存够就领奖，默认开启
   steal: false, stealMax: 20,     // 0=不限(一次偷完所有可偷)
   careFriends: false, careMax: 0,  // 0=不限(把好友的草/虫/水全部处理完)
   sellAll: false,

@@ -193,7 +193,7 @@ const esc = (s) => String(s ?? '').replace(/[<>&"]/g, (c) => ({'<':'&lt;','>':'&
 const FEATURES = [
   ['harvest','一键收割','成熟果实自动收'],['dig','一键耕地','收完自动翻地'],['sow','自动种植','空地自动播种'],
   ['weed','除草','自家土地'],['kill','杀虫','自家土地'],['water','浇水','自家土地'],['muck','施肥','需游戏内开通'],
-  ['friendLand','友情地收割','收自己的友情地'],['steal','偷好友菜','按排行偷成熟作物'],
+  ['friendLand','友情地收割','收自己的友情地'],['farmTasks','日常任务','库存够就自动完成领奖'],['steal','偷好友菜','按排行偷成熟作物'],
   ['careFriends','帮好友护理','除草/杀虫/浇水'],['sellAll','自动全售','卖掉未锁定果实⚠️'],
   ['pastureDaily','牧场每日','每日礼包+收获(每天一次)'],['petDaily','宠物每日','每日报道津贴(每天一次)'],
   ['goldDaily','圣衣每日','每日奖励宝箱(每天一次)'],['pastureLoop','牧场定时收获','按间隔巡检收获圈舍'],
@@ -485,8 +485,8 @@ async function farmSub(view) {
         <input type="number" id="buy_${g.seedsId}" value="1" min="1"><button class="btn s p" onclick="act('buy',{seedsId:${g.seedsId},num:+document.getElementById('buy_${g.seedsId}').value})">买</button></div></div>`).join('') : '<div class="hint">该档位无种子</div>');
     } else if (view === 'task') {
       const tasks = await api('/accounts/' + curId + '/tasks');
-      V.innerHTML = '<div class="hint">上交为消耗操作，请确认库存充足后再交</div>' + tasks.map((t) => `<div class="li"><div class="n">${esc(t.name)}</div><div class="r">
-        <button class="btn s" onclick="if(confirm('确认上交任务：${esc(t.name)}？'))act('submitTask',{taskId:${t.taskId}})">上交</button></div></div>`).join('');
+      V.innerHTML = '<div class="hint">默认自动完成(库存够时)；这里也可手动上交</div>' + (tasks.length ? tasks.map((t) => `<div class="li"><div class="n">${esc(t.name)} <small>需${esc(t.need||'?')} 库存${t.have}</small></div><div class="r">
+        <button class="btn s ${t.canFinish?'p':''}" ${t.canFinish?'':'disabled'} onclick="act('finishTask',{orderId:${t.orderId}},()=>farmSub('task'))">${t.canFinish?'完成':'库存不足'}</button></div></div>`).join('') : '<div class="hint">暂无待办任务</div>');
     } else if (view === 'steal') {
       const oper = window._rankOper || 0;
       const fr = await api('/accounts/' + curId + '/rank?oper=' + oper);

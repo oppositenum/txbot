@@ -52,6 +52,7 @@ function jobEnabled(acc, type) {
   if (type === 'friendland') return !!cfg.friendLand;
   if (type === 'steal') return !!cfg.steal;
   if (type === 'care') return !!cfg.careFriends;
+  if (type === 'farmtask') return !!cfg.farmTasks;
   if (type === 'daily') return !!(cfg.pastureDaily || cfg.petDaily || cfg.goldDaily || cfg.farmSignin || cfg.groupSignin || cfg.qqSignin);
   if (type === 'pasture') return !!(cfg.pastureLoop || cfg.pioneer);
   if (type === 'pettrain') return !!cfg.petTrain;
@@ -224,6 +225,24 @@ async function runFriendLandJob(id) {
   }
   log(id, fn ? `友情地护理 ${fn} 次` : `友情地巡检: ${tasks.length}块地均无需处理`);
   setJob(id, 'friendland', pollNext(cfg));
+}
+
+// ==================== farmtask job（日常任务，库存够就自动完成，独立并发）====================
+async function runFarmTaskJob(id) {
+  const c = new FarmClient(store.get(id).cookie, { proxy: store.get(id).proxy });
+  const tasks = await c.getTasks();
+  const details = await Promise.all(tasks.map((t) => c.getTaskInfo(t.taskId).then((info) => ({ ...t, ...info })).catch(() => null)));
+  let done = 0; const rewards = [];
+  for (const t of details.filter(Boolean)) {
+    if (!t.canFinish) continue;
+    const r = await c.finishTask(t.orderId);
+    done++;
+    const m = r.match(/奖励你([^>]{0,40})/);
+    rewards.push(`${t.name}:${m ? m[1].trim() : '完成'}`);
+    await sleep(800 + Math.random() * 800);
+  }
+  log(id, done ? `完成${done}个日常任务: ${rewards.join(' / ')}` : `任务巡检: ${details.filter(Boolean).length}个待办均库存不足`);
+  setJob(id, 'farmtask', pollNext(store.get(id).config));
 }
 
 // ==================== steal job（偷菜，独立并发，遍历翻页+白名单）====================
@@ -458,6 +477,7 @@ async function runJob(id, type, retried = false) {
       else if (type === 'friendland') await runFriendLandJob(id);
       else if (type === 'steal') await runStealJob(id);
       else if (type === 'care') await runCareJob(id);
+      else if (type === 'farmtask') await runFarmTaskJob(id);
       else if (type === 'daily') await runDailyJob(id, c);
       else if (type === 'pasture') await runPastureJob(id, c);
       else if (type === 'pettrain') await runPetTrainJob(id, c);
@@ -513,7 +533,7 @@ function tick() {
     if (!acc.config.enabled || acc.status.needLogin) continue;
     const jobs = acc.status.jobs || {};
     let dirty = false;
-    for (const type of ['farm', 'friendland', 'steal', 'care', 'daily', 'pasture', 'pettrain', 'grab', 'goldfight']) {
+    for (const type of ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pettrain', 'grab', 'goldfight']) {
       if (!jobEnabled(acc, type)) continue;
       if (running.has(`${acc.id}:${type}`)) continue; // 该账号该任务已在跑（同账号不同任务可并行）
       let nr = jobs[type];

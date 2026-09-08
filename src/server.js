@@ -173,8 +173,12 @@ app.get('/api/accounts/:id/store', async (req, res) => {
 });
 
 app.get('/api/accounts/:id/tasks', async (req, res) => {
-  try { res.json(await sched.getClient(store.get(req.params.id)).getTasks()); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  try {
+    const c = sched.getClient(store.get(req.params.id));
+    const tasks = await c.getTasks();
+    const details = await Promise.all(tasks.map((t) => c.getTaskInfo(t.taskId).then((info) => ({ ...t, ...info })).catch(() => ({ ...t, need: null, have: 0, canFinish: false }))));
+    res.json(details);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/accounts/:id/shop', async (req, res) => {
@@ -223,7 +227,7 @@ const ACTIONS = {
   changeSeason: (c, p) => c.changeSeason(p.landId, p.season),
   toSpecialLand: (c, p) => c.toSpecialLand(p.landId, p.sowSpecial),
   openFun: (c, p) => c.openFun(p.actionId),
-  submitTask: (c, p) => c.submitTask(p.taskId),
+  finishTask: (c, p) => c.finishTask(p.orderId),
   signin: (c, p) => c.signin(p.regkey, p.authnum),
   farmSignin: (c) => require('./signin').farmSignin(c),
   groupSignin: (c) => require('./signin').groupSignin(c),

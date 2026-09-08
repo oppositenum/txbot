@@ -338,16 +338,20 @@ class FarmClient {
   async getTaskInfo(taskId) {
     const html = await this.req(`orderInfo.do?taskId=${taskId}`);
     const t = strip(html);
+    const orderIdM = html.match(/finishOrder\.do\?orderId=(\d+)/); // 库存够时才出现，即"可完成"的判据
     return {
       taskId,
-      text: t.slice(t.indexOf('任务名称'), t.indexOf('我的农场|') > 0 ? t.indexOf('我的农场|') : 600),
-      need: (t.match(/上交需求:([^ ]+)/) || [])[1] || null,
-      have: +(t.match(/仓库有此果实:(\d+)个/) || [])[1] || 0,
+      name: (t.match(/任务名称[:：]\s*(.+?)\s*等级要求/) || [])[1]?.trim() || null,
+      need: (t.match(/上交需求[:：]\s*([^\s]+)/) || [])[1] || null,
+      have: +(t.match(/仓库有此果实[:：]\s*(\d+)个/) || [])[1] || 0,
       seedsId: +(html.match(/seedsInfo\.do\?seedsId=(\d+)/) || [])[1] || null,
-      submitLink: (html.match(/href="((?:submit|finish|complete|handOver)[^"]*\.do[^"]*)"/) || [])[1] || null,
-      html,
+      canFinish: !!orderIdM,
+      orderId: orderIdM ? +orderIdM[1] : null,
     };
   }
+
+  // 完成任务，领取奖励(经验/金币/道具)；只有库存够时(getTaskInfo().canFinish)才应调用
+  async finishTask(orderId) { return this._act(`finishOrder.do?orderId=${orderId}`); }
 
   // 商店种子列表
   static parseShopItems(html) {
@@ -493,8 +497,6 @@ class FarmClient {
   async useCoin2All() { await this.ensureZ(); return this._act(`coin2All.do?z=${this.z}`); } // 十倍金币地卡
   async openFun(actionId) { return this._act(`openFun.do?actionId=${actionId}`); } // 5浇水/6施肥/7锁定/8禁被施肥
 
-  // 任务：上交（库存需≥需求；消耗性，谨慎）。端点在库存足时出现，先取详情确认
-  async submitTask(taskId) { return this._act(`orderInfo.do?taskId=${taskId}&submit=1`); }
 
   // 聊天室抢字卡积分：房间出现 exchangeCard 表单时全部提交
   // 返回 {found, full, results}

@@ -1,0 +1,27 @@
+{
+  "name": "txbot",
+  "version": "1.0.0",
+  "description": "天下农场多账号协议托管 - 跨平台 (Linux/Windows/macOS)",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js"
+  },
+  "keywords": [
+    "tx.com.cn",
+    "farm",
+    "bot"
+  ],
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.2.1",
+    "undici": "^8.10.2"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
+  }
+}

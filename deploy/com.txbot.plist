@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS launchd 开机自启配置
+  安装步骤：
+    1. 改下面的 node 路径、WorkingDirectory、项目路径为实际值
+       node 路径：终端执行 `which node`（nvm 用户是 ~/.nvm/versions/node/vXX/bin/node）
+    2. cp deploy/com.txbot.plist ~/Library/LaunchAgents/com.txbot.plist
+    3. launchctl load ~/Library/LaunchAgents/com.txbot.plist
+    4. launchctl start com.txbot
+    卸载：launchctl unload ~/Library/LaunchAgents/com.txbot.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.txbot</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/node</string>
+        <string>src/server.js</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/youruser/txbot</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PORT</key>
+        <string>8787</string>
+        <key>HOST</key>
+        <string>0.0.0.0</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/txbot.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/txbot.err.log</string>
+</dict>
+</plist>

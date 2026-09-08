@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>txbot · 天下农场托管</title>
+<style>
+:root{--bg:#0f1115;--card:#191c23;--card2:#20242e;--line:#2a2f3a;--txt:#e8eaf0;--dim:#8b93a5;--acc:#4ade80;--warn:#fbbf24;--err:#f87171;--blue:#60a5fa}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:15px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;padding-bottom:80px}
+header{position:sticky;top:0;z-index:10;background:rgba(15,17,21,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:14px 16px;display:flex;align-items:center;justify-content:space-between}
+h1{font-size:17px;font-weight:600}h1 span{color:var(--acc)}
+.btn{border:1px solid var(--line);background:var(--card2);color:var(--txt);border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer;transition:.15s}
+.btn:active{transform:scale(.96)}
+.btn.p{background:var(--acc);border-color:var(--acc);color:#08260f;font-weight:600}
+.btn.d{color:var(--err);border-color:#3a2a2a}
+.btn.s{padding:5px 10px;font-size:12px}
+main{max-width:640px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:14px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.name{font-size:16px;font-weight:600}
+.meta{color:var(--dim);font-size:12px;margin-top:2px}
+.chip{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--card2);color:var(--dim)}
+.chip.on{background:#12351f;color:var(--acc)}.chip.run{background:#332b12;color:var(--warn)}.chip.err{background:#3a1c1c;color:var(--err)}
+.stats{display:flex;gap:14px;margin:10px 0 4px;font-size:13px;color:var(--dim)}
+.stats b{color:var(--txt);font-weight:600}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.sw{position:relative;width:46px;height:26px;flex:none}
+.sw input{opacity:0;width:0;height:0}
+.sw i{position:absolute;inset:0;background:var(--card2);border:1px solid var(--line);border-radius:20px;transition:.2s;cursor:pointer}
+.sw i:before{content:"";position:absolute;width:18px;height:18px;left:3px;top:3px;background:var(--dim);border-radius:50%;transition:.2s}
+.sw input:checked+i{background:#12351f;border-color:var(--acc)}
+.sw input:checked+i:before{transform:translateX(20px);background:var(--acc)}
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:none;align-items:flex-end;justify-content:center}
+.mask.show{display:flex}
+.sheet{background:var(--card);border-radius:18px 18px 0 0;width:100%;max-width:640px;max-height:88vh;overflow-y:auto;padding:20px;border:1px solid var(--line)}
+.sheet h2{font-size:16px;margin-bottom:14px}
+.f{margin-bottom:12px}
+.f label{display:block;font-size:13px;color:var(--dim);margin-bottom:5px}
+.f input[type=text],.f input[type=number],.f textarea,.f select{width:100%;background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:9px 12px;font-size:14px}
+.f textarea{min-height:90px;font-family:monospace;font-size:12px}
+.opt{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line)}
+.opt:last-child{border:none}
+.opt .t{font-size:14px}.opt .st{font-size:11px;color:var(--dim)}
+.logs{font:11px/1.7 ui-monospace,monospace;background:#0c0e12;border-radius:8px;padding:10px;max-height:50vh;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:#a8b3c7}
+.empty{text-align:center;color:var(--dim);padding:60px 0;font-size:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:#252a35;border:1px solid var(--line);padding:10px 18px;border-radius:10px;font-size:13px;z-index:99;opacity:0;transition:.25s;pointer-events:none;max-width:86vw}
+.toast.show{opacity:1}
+.fab{position:fixed;right:20px;bottom:24px;width:54px;height:54px;border-radius:50%;background:var(--acc);color:#08260f;font-size:28px;border:none;cursor:pointer;box-shadow:0 4px 20px rgba(74,222,128,.35);z-index:20}
+.sheetacts{display:flex;gap:10px;margin-top:16px}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tab{flex:1;padding:9px;border:1px solid var(--line);background:var(--card2);color:var(--dim);border-radius:8px;font-size:13px;cursor:pointer}
+.tab.on{background:#12351f;border-color:var(--acc);color:var(--acc);font-weight:600}
+.sheetacts .btn{flex:1;padding:11px;text-align:center;font-size:14px}
+.landgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin-top:10px}
+.land{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:11px;color:var(--dim)}
+.land b{display:block;color:var(--txt);font-size:12px}
+.land.ok{border-color:var(--acc)}.land.ok b{color:var(--acc)}
+.subtabs{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.subtab{padding:5px 10px;font-size:12px;border:1px solid var(--line);background:var(--card2);color:var(--dim);border-radius:16px;cursor:pointer}
+.subtab.on{background:#1a2740;border-color:var(--blue);color:var(--blue)}
+.li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;background:var(--card2);border:1px solid var(--line);border-radius:8px;margin-bottom:7px}
+.li .n{font-size:13px}.li .n small{color:var(--dim);font-size:11px}
+.li .r{display:flex;align-items:center;gap:6px}
+.li input{width:56px;background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 7px;font-size:12px;text-align:center}
+.gInfo{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--dim);margin-bottom:10px}
+.gInfo b{color:var(--txt)}
+.hint{color:var(--dim);font-size:12px;margin:6px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>tx<span>bot</span> · 农场托管</h1>
+  <div style="display:flex;gap:8px">
+    <button class="btn s" onclick="openSettings()">设置</button>
+    <button class="btn s" onclick="loadAccounts()">刷新</button>
+  </div>
+</header>
+<main id="list"><div class="empty">加载中…</div></main>
+<button class="fab" onclick="openAdd()">+</button>
+
+<!-- 添加/编辑账号 -->
+<div class="mask" id="mAdd"><div class="sheet">
+  <h2 id="addTitle">添加账号</h2>
+  <div class="f"><label>备注名（可留空）</label><input type="text" id="aName" placeholder="例如：大号"></div>
+  <div class="f"><label>代理（可选，http://[user:pass@]host:port）</label><input type="text" id="aProxy" placeholder="留空则直连；该账号所有协议请求走此代理"></div>
+  <div class="tabs" id="addTabs">
+    <button class="tab on" data-m="creds" onclick="switchMode('creds')">账号密码</button>
+    <button class="tab" data-m="cookie" onclick="switchMode('cookie')">Cookie</button>
+  </div>
+  <div id="mCreds">
+    <div class="f"><label>账号（天下号/手机号/邮箱）</label><input type="text" id="aUid" placeholder="例如：12345678"></div>
+    <div class="f"><label>密码</label><input type="text" id="aPwd" placeholder="登录密码"></div>
+    <div class="meta" style="color:var(--dim);font-size:12px;margin-bottom:8px">保存时会立即验证登录；Cookie 失效后系统会用账密自动重登。</div>
+  </div>
+  <div id="mCookieBox" style="display:none">
+    <div class="f"><label>Cookie（浏览器登录后复制，需含 JSESSIONID）</label>
+      <textarea id="aCookie" placeholder="JSESSIONID=xxx; txuid=xxx; txEncodeUid=xxx; ..."></textarea></div>
+  </div>
+  <div class="sheetacts"><button class="btn" onclick="hide('mAdd')">取消</button><button class="btn p" id="saveBtn" onclick="saveAccount()">保存并登录</button></div>
+</div></div>
+
+<!-- 全局设置 -->
+<div class="mask" id="mSet"><div class="sheet">
+  <h2>全局设置 · 负载均衡</h2>
+  <div class="grid2">
+    <div class="f"><label>最大并发账号数</label><input type="number" id="sMax" min="1" max="64"></div>
+    <div class="f"><label>调度扫描间隔(秒)</label><input type="number" id="sTick" min="5"></div>
+    <div class="f"><label>每日任务开始(时:分)</label><div style="display:flex;gap:6px"><input type="number" id="sHour" min="0" max="23" style="width:50%"><input type="number" id="sMin" min="0" max="59" style="width:50%"></div></div>
+    <div class="f"><label>每日错峰范围(分钟)</label><input type="number" id="sSpread" min="0"></div>
+  </div>
+  <div class="hint">并发数越小对服务器越友好；几百账号建议 5–10，配合错峰避免同时打请求。</div>
+  <div class="f"><label>偷菜白名单（全局，这些 uid 不偷；逗号/空格/换行分隔）</label>
+    <textarea id="sWhite" placeholder="例如：1225 3777 51013" style="min-height:70px"></textarea></div>
+  <div class="sheetacts"><button class="btn" onclick="hide('mSet')">取消</button><button class="btn p" onclick="saveSettings()">保存</button></div>
+</div></div>
+
+<!-- 任务配置 -->
+<div class="mask" id="mCfg"><div class="sheet">
+  <h2>任务配置 · <span id="cfgName"></span></h2>
+  <div id="cfgOpts"></div>
+  <div class="grid2" style="margin-top:12px">
+    <div class="f"><label>农场巡检间隔(分钟)</label><input type="number" id="cPoll" min="2"></div>
+    <div class="f"><label>种植种子</label><select id="cSeed"><option value="auto">自动（数量最多）</option></select></div>
+    <div class="f"><label>偷菜上限(0=不限,偷完为止)</label><input type="number" id="cStealMax" min="0"></div>
+    <div class="f"><label>助友上限(0=不限,全部干完)</label><input type="number" id="cCareMax" min="0"></div>
+    <div class="f"><label>牧场巡检间隔(分钟)</label><input type="number" id="cPastureInt" min="10"></div>
+    <div class="f"><label>拓荒场景</label><select id="cPioScene"><option value="1">野猪林</option><option value="2">九寨沟</option><option value="3">西双版纳</option></select></div>
+    <div class="f"><label>拓荒类型</label><select id="cPioAction"><option value="1">优质木材(30分)</option><option value="2">干草(30分)</option><option value="3">石块(50分)</option><option value="4">兽骨(10分)</option></select></div>
+  </div>
+  <div class="grid2">
+    <div class="f"><label>抢积分·房间号(ar1)</label><input type="number" id="cGrabRoom"></div>
+    <div class="f"><label>抢积分·每天开始(时:分)</label><div style="display:flex;gap:6px"><input type="number" id="cGrabHour" min="0" max="23" style="width:50%"><input type="number" id="cGrabMin" min="0" max="59" style="width:50%"></div></div>
+    <div class="f"><label>抢积分·突发时长(分钟)</label><input type="number" id="cGrabWin" min="1"></div>
+    <div class="f"><label>抢积分·轮询间隔(秒)</label><input type="number" id="cGrabPoll" min="2"></div>
+  </div>
+  <div class="f"><label>宠物培养属性(可多选，轮换培养；某个练不了自动换下一个)</label>
+    <div id="cPetTrainWts" style="display:flex;flex-wrap:wrap;gap:8px">
+      <label class="subtab"><input type="checkbox" value="3" style="margin-right:4px">智慧(加工)</label>
+      <label class="subtab"><input type="checkbox" value="2" style="margin-right:4px">斗志(采集)</label>
+      <label class="subtab"><input type="checkbox" value="1" style="margin-right:4px">气质(种花)</label>
+      <label class="subtab"><input type="checkbox" value="4" style="margin-right:4px">体贴(料理)</label>
+    </div></div>
+  <div class="hint">农场按作物成熟时间精确唤醒；兜底上限用于捕捉别人帮浇水/被偷导致的提前成熟。</div>
+  <div class="sheetacts"><button class="btn" onclick="hide('mCfg')">取消</button><button class="btn p" onclick="saveCfg()">保存本号</button></div>
+  <div class="sheetacts" style="margin-top:8px">
+    <button class="btn" onclick="saveCfgAsDefault()">设为新账号默认</button>
+    <button class="btn" style="border-color:var(--blue);color:var(--blue)" onclick="applyCfgToAll()">应用到所有账号</button>
+  </div>
+  <div class="hint">「设为新账号默认」：以后新加的号自动用这套配置。「应用到所有账号」：把这套配置一键推给现有全部账号(不改各号启用开关/代理)。</div>
+</div></div>
+
+<!-- 详情/操作控制台 -->
+<div class="mask" id="mDet"><div class="sheet">
+  <div class="row" style="margin-bottom:12px"><h2 id="detName" style="margin:0"></h2><button class="btn s" onclick="hide('mDet')">关闭</button></div>
+  <div class="tabs" id="detTabs">
+    <button class="tab on" data-t="farm" onclick="detTab('farm')">农场</button>
+    <button class="tab" data-t="pasture" onclick="detTab('pasture')">牧场</button>
+    <button class="tab" data-t="pet" onclick="detTab('pet')">宠物</button>
+    <button class="tab" data-t="gold" onclick="detTab('gold')">圣衣</button>
+    <button class="tab" data-t="logs" onclick="detTab('logs')">日志</button>
+  </div>
+  <div id="tabBody"></div>
+</div></div>
+
+<!-- 签到 -->
+<div class="mask" id="mSign"><div class="sheet">
+  <h2>每日签到</h2>
+  <div class="f" style="text-align:center"><img id="capImg" style="height:44px;border-radius:6px;background:#fff" alt="验证码"><div class="st" style="color:var(--dim);font-size:12px;margin-top:4px">点击图片可刷新</div></div>
+  <div class="f"><label>验证码（4位）</label><input type="text" id="capIn" maxlength="4" inputmode="numeric" style="text-align:center;font-size:20px;letter-spacing:8px"></div>
+  <div class="sheetacts"><button class="btn" onclick="hide('mSign')">取消</button><button class="btn p" onclick="doSignin()">领取奖励</button></div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let accounts = [], curId = null, curRegkey = null, logTimer = null;
+const $ = (s) => document.querySelector(s);
+const api = async (p, opt) => {
+  const r = await fetch('/api' + p, opt ? { headers: {'Content-Type':'application/json'}, ...opt, body: opt.body ? JSON.stringify(opt.body) : undefined } : undefined);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+};
+const toast = (m) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2600); };
+const show = (id) => $('#' + id).classList.add('show');
+const hide = (id) => $('#' + id).classList.remove('show');
+const esc = (s) => String(s ?? '').replace(/[<>&"]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+const FEATURES = [
+  ['harvest','一键收割','成熟果实自动收'],['dig','一键耕地','收完自动翻地'],['sow','自动种植','空地自动播种'],
+  ['weed','除草','自家土地'],['kill','杀虫','自家土地'],['water','浇水','自家土地'],['muck','施肥','需游戏内开通'],
+  ['friendLand','友情地收割','收自己的友情地'],['steal','偷好友菜','按排行偷成熟作物'],
+  ['careFriends','帮好友护理','除草/杀虫/浇水'],['sellAll','自动全售','卖掉未锁定果实⚠️'],
+  ['pastureDaily','牧场每日','每日礼包+收获(每天一次)'],['petDaily','宠物每日','每日报道津贴(每天一次)'],
+  ['goldDaily','圣衣每日','每日奖励宝箱(每天一次)'],['pastureLoop','牧场定时收获','按间隔巡检收获圈舍'],
+  ['pioneer','神殿拓荒','定时发起拓荒(到点自动掉落)'],
+  ['sowAutoBuy','库存不足自动购种','指定种子没库存时自动去商店买够'],
+  ['farmSignin','农场签到','每日自动签到(OCR验证码)'],['groupSignin','群组签到','每日自动签到(OCR验证码)'],['qqSignin','QQ签到','每日自动签到'],
+  ['petTrain','宠物培养','定时循环培养指定属性'],
+  ['grabPoints','抢积分','每天定时突发抢聊天室字卡积分'],
+];
+
+function jobEnabledUI(a, type) {
+  if (type === 'daily') return !!(a.config.pastureDaily || a.config.petDaily || a.config.goldDaily);
+  return true;
+}
+function FarmClient_matureMin(text) {
+  if (!text) return null;
+  const h = +(text.match(/(\d+)\s*小时/) || [])[1] || 0;
+  const m = +(text.match(/(\d+)\s*分钟/) || [])[1] || 0;
+  return (h || m) ? h * 60 + m : null;
+}
+function fmtLeft(ts) {
+  if (ts == null) return null;
+  const ms = ts - Date.now();
+  if (ms <= 0) return '可收';
+  const m = Math.round(ms / 60000);
+  return m >= 60 ? `${Math.floor(m / 60)}时${m % 60}分后` : `${m}分后`;
+}
+function overviewLine(st) {
+  const parts = [];
+  const f = st.farmInfo;
+  if (f) parts.push(f.harvestable > 0 ? `农场 ${f.harvestable}块可收割` : (f.nextMatureAt ? `农场 ${fmtLeft(f.nextMatureAt)}成熟` : '农场 无作物'));
+  const p = st.pastureInfo;
+  if (p) {
+    let ps;
+    if (p.harvestable > 0) ps = `牧场 ${p.harvestable}可收获`;
+    else if (p.needFeed > 0) ps = `牧场 ${p.needFeed}待喂食`;
+    else if (p.idle > 0) ps = `牧场 ${p.idle}待补栏`;
+    else if (p.nextMatureAt && p.nextMatureAt > Date.now()) ps = `牧场 ${fmtLeft(p.nextMatureAt)}成熟`;
+    else ps = '牧场 生长中';
+    parts.push(ps);
+  }
+  return parts.length ? `<div class="meta" style="color:var(--acc)">📊 ${parts.join(' · ')}</div>` : '';
+}
+function openBrowser(id) {
+  // 用本地浏览器新标签，经服务端 cookie 注入代理以该账号身份浏览
+  window.open('/b/' + id + '/plugins/farm/cs/index.do', '_blank');
+}
+async function openSettings() {
+  try {
+    const s = await api('/settings');
+    $('#sMax').value = s.maxConcurrent; $('#sTick').value = s.tickSec; $('#sHour').value = s.dailyStartHour; $('#sMin').value = s.dailyStartMin ?? 6; $('#sSpread').value = s.dailySpreadMin;
+    $('#sWhite').value = (s.stealWhitelist || []).join(' ');
+    show('mSet');
+  } catch (e) { toast(e.message); }
+}
+async function saveSettings() {
+  const stealWhitelist = [...new Set(($('#sWhite').value.match(/\d+/g) || []).map(Number))];
+  const body = { maxConcurrent: +$('#sMax').value || 5, tickSec: +$('#sTick').value || 20, dailyStartHour: +$('#sHour').value || 0, dailyStartMin: +$('#sMin').value || 0, dailySpreadMin: +$('#sSpread').value || 120, stealWhitelist };
+  try { await api('/settings', { method: 'PUT', body }); hide('mSet'); toast('设置已保存(白名单' + stealWhitelist.length + '人)'); } catch (e) { toast(e.message); }
+}
+async function addWhite(uid, name) {
+  try {
+    const s = await api('/settings');
+    const wl = new Set((s.stealWhitelist || []).map(Number)); wl.add(+uid);
+    await api('/settings', { method: 'PUT', body: { stealWhitelist: [...wl] } });
+    toast('已加入白名单: ' + (name || uid));
+  } catch (e) { toast(e.message); }
+}
+
+async function loadAccounts() {
+  try { accounts = await api('/accounts'); } catch (e) { toast('加载失败: ' + e.message); return; }
+  const el = $('#list');
+  if (!accounts.length) { el.innerHTML = '<div class="empty">还没有账号<br>点右下角 + 添加，粘贴登录 Cookie 即可</div>'; return; }
+  el.innerHTML = accounts.map((a) => {
+    const st = a.status || {};
+    const chip = st.needLogin ? '<span class="chip err">Cookie失效</span>'
+      : st.state === 'running' ? '<span class="chip run">执行中</span>'
+      : a.config.enabled ? '<span class="chip on">托管中</span>' : '<span class="chip">已暂停</span>';
+    const feats = FEATURES.filter(([k]) => a.config[k]).map(([,n]) => n).join('·') || '未配置任务';
+    const jobs = st.jobs || {};
+    const nextT = (t) => t ? new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '—';
+    return `<div class="card">
+      <div class="row">
+        <div><span class="name">${esc(a.name)}</span> ${chip}
+          <div class="meta">${st.level ? `Lv.${st.level} · 金币 ${Number(st.coin).toLocaleString()}` : '未同步'}${a.proxy ? ' · 🌐代理' : ''}</div>
+        </div>
+        <label class="sw"><input type="checkbox" ${a.config.enabled ? 'checked' : ''} onchange="toggle('${a.id}',this.checked)"><i></i></label>
+      </div>
+      <div class="meta" style="margin-top:6px">任务: ${feats}</div>
+      ${overviewLine(st)}
+      ${a.config.enabled ? `<div class="meta">下次唤醒: 农场 ${nextT(jobs.farm)}${jobEnabledUI(a,'daily') ? ' · 每日 ' + nextT(jobs.daily) : ''}${(a.config.pastureLoop||a.config.pioneer) ? ' · 牧场 ' + nextT(jobs.pasture) : ''}${a.config.petTrain ? ' · 宠物培养 ' + nextT(jobs.pettrain) : ''}${a.config.grabPoints ? ' · 抢积分 ' + nextT(jobs.grab) : ''}</div>` : ''}
+      <div class="meta">上次: ${st.lastRun ? new Date(st.lastRun).toLocaleTimeString() + ' · ' + esc(st.lastResult) : '—'}</div>
+      <div class="acts">
+        <button class="btn s p" onclick="runNow('${a.id}')">立即执行</button>
+        <button class="btn s" onclick="openDetail('${a.id}')">详情/操作</button>
+        <button class="btn s" onclick="openBrowser('${a.id}')">打开网页</button>
+        <button class="btn s" onclick="openCfg('${a.id}')">任务配置</button>
+        ${a.hasCreds ? `<button class="btn s" onclick="relogin('${a.id}')">重新登录</button>` : ''}
+        <button class="btn s" onclick="editCookie('${a.id}')">更新凭证</button>
+        <button class="btn s d" onclick="del('${a.id}')">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+let addMode = 'creds';
+function switchMode(m) {
+  addMode = m;
+  document.querySelectorAll('#addTabs .tab').forEach((t) => t.classList.toggle('on', t.dataset.m === m));
+  $('#mCreds').style.display = m === 'creds' ? '' : 'none';
+  $('#mCookieBox').style.display = m === 'cookie' ? '' : 'none';
+  $('#saveBtn').textContent = m === 'creds' ? '保存并登录' : '保存';
+}
+function openAdd() {
+  curId = null; $('#addTitle').textContent = '添加账号';
+  $('#aName').value = ''; $('#aUid').value = ''; $('#aPwd').value = ''; $('#aCookie').value = ''; $('#aProxy').value = '';
+  $('#addTabs').style.display = 'flex'; switchMode('creds'); show('mAdd');
+}
+function editCookie(id) {
+  curId = id; const a = accounts.find((x) => x.id === id);
+  $('#addTitle').textContent = '更新凭证 · ' + a.name; $('#aName').value = a.name;
+  $('#aUid').value = a.useruid || ''; $('#aPwd').value = ''; $('#aCookie').value = ''; $('#aProxy').value = a.proxy || '';
+  $('#addTabs').style.display = 'flex'; switchMode(a.hasCreds ? 'creds' : 'cookie'); show('mAdd');
+}
+async function saveAccount() {
+  const name = $('#aName').value.trim();
+  const proxy = $('#aProxy').value.trim();
+  let body;
+  if (addMode === 'creds') {
+    const useruid = $('#aUid').value.trim(), password = $('#aPwd').value;
+    if (!useruid || !password) return toast('请输入账号和密码');
+    body = { name, useruid, password, proxy };
+  } else {
+    const cookie = $('#aCookie').value.trim();
+    if (!cookie && !curId) return toast('请粘贴 Cookie');
+    body = { name, proxy };
+    if (cookie) body.cookie = cookie;
+  }
+  const btn = $('#saveBtn'); btn.textContent = '登录中…'; btn.disabled = true;
+  try {
+    if (curId) await api('/accounts/' + curId, { method: 'PUT', body });
+    else await api('/accounts', { method: 'POST', body });
+    hide('mAdd'); toast(curId ? '已更新' : '添加成功'); loadAccounts();
+  } catch (e) { toast(e.message); }
+  finally { btn.disabled = false; switchMode(addMode); }
+}
+async function del(id) { if (!confirm('确定删除该账号？')) return; await api('/accounts/' + id, { method: 'DELETE' }); loadAccounts(); }
+async function toggle(id, on) { try { await api('/accounts/' + id, { method: 'PUT', body: { config: { enabled: on } } }); toast(on ? '已开启托管，正在执行第一轮' : '已暂停'); setTimeout(loadAccounts, 800); } catch (e) { toast(e.message); } }
+async function runNow(id) { await api('/accounts/' + id + '/run', { method: 'POST', body: {} }); toast('已触发执行'); setTimeout(loadAccounts, 1500); }
+async function relogin(id) { toast('重新登录中…'); try { await api('/accounts/' + id + '/relogin', { method: 'POST', body: {} }); toast('登录成功，Cookie 已更新'); loadAccounts(); } catch (e) { toast('登录失败: ' + e.message); } }
+
+function openCfg(id) {
+  curId = id; const a = accounts.find((x) => x.id === id);
+  $('#cfgName').textContent = a.name;
+  $('#cfgOpts').innerHTML = FEATURES.map(([k, n, d]) =>
+    `<div class="opt"><div><div class="t">${n}</div><div class="st">${d}</div></div>
+     <label class="sw"><input type="checkbox" data-k="${k}" ${a.config[k] ? 'checked' : ''}><i></i></label></div>`).join('');
+  $('#cPoll').value = a.config.farmPollMaxMin; $('#cStealMax').value = a.config.stealMax; $('#cCareMax').value = a.config.careMax; $('#cPastureInt').value = a.config.pastureIntervalMin;
+  $('#cPioScene').value = a.config.pioneerScene || 1; $('#cPioAction').value = a.config.pioneerAction || 1;
+  const wts = (a.config.petTrainWts && a.config.petTrainWts.length) ? a.config.petTrainWts.map(String) : [String(a.config.petTrainWt || 3)];
+  document.querySelectorAll('#cPetTrainWts input').forEach((i) => (i.checked = wts.includes(i.value)));
+  $('#cGrabRoom').value = a.config.grabRoom || 696; $('#cGrabHour').value = a.config.grabHour ?? 12; $('#cGrabMin').value = a.config.grabMin ?? 0; $('#cGrabWin').value = a.config.grabWindowMin || 10; $('#cGrabPoll').value = a.config.grabPollSec || 5;
+  const sel = $('#cSeed'); sel.innerHTML = '<option value="auto">自动（种子袋数量最多）</option><option value="' + a.config.sowSeedsId + '">加载种子目录中…</option>';
+  api('/accounts/' + id + '/seed-catalog').then((cat) => {
+    sel.innerHTML = '<option value="auto">自动（种子袋数量最多）</option>' + cat.map((s) =>
+      `<option value="${s.seedsId}" ${String(s.seedsId) === String(a.config.sowSeedsId) ? 'selected' : ''}>${esc(s.name)} Lv${s.level} 库存${s.count} ${s.price}币${s.gift ? ' 🎁礼物' : ''}</option>`
+    ).join('');
+  }).catch(() => { sel.innerHTML = '<option value="auto">自动（种子袋数量最多）</option><option value="' + a.config.sowSeedsId + '" selected>加载失败，仍用 seedsId=' + a.config.sowSeedsId + '</option>'; });
+  show('mCfg');
+}
+function collectCfg() {
+  const petTrainWts = [...document.querySelectorAll('#cPetTrainWts input:checked')].map((i) => +i.value);
+  if (!petTrainWts.length) petTrainWts.push(3);
+  const config = { farmPollMaxMin: +$('#cPoll').value || 30, sowSeedsId: $('#cSeed').value, stealMax: +$('#cStealMax').value || 10, careMax: +$('#cCareMax').value || 10, pastureIntervalMin: +$('#cPastureInt').value || 120, pioneerScene: +$('#cPioScene').value || 1, pioneerAction: +$('#cPioAction').value || 1, petTrainWts, petTrainWt: petTrainWts[0],
+    grabRoom: +$('#cGrabRoom').value || 696, grabHour: +$('#cGrabHour').value || 0, grabMin: +$('#cGrabMin').value || 0, grabWindowMin: +$('#cGrabWin').value || 10, grabPollSec: +$('#cGrabPoll').value || 5 };
+  document.querySelectorAll('#cfgOpts input[data-k]').forEach((i) => (config[i.dataset.k] = i.checked));
+  return config;
+}
+async function saveCfg() {
+  try { await api('/accounts/' + curId, { method: 'PUT', body: { config: collectCfg() } }); hide('mCfg'); toast('配置已保存'); loadAccounts(); } catch (e) { toast(e.message); }
+}
+async function saveCfgAsDefault() {
+  try { await api('/default-config', { method: 'PUT', body: collectCfg() }); toast('已设为新账号默认模板'); } catch (e) { toast(e.message); }
+}
+async function applyCfgToAll() {
+  if (!confirm('把当前这套配置应用到所有账号？(不改各号的启用开关和代理)')) return;
+  try { const r = await api('/apply-config-all', { method: 'POST', body: { config: collectCfg(), asTemplate: true } }); hide('mCfg'); toast('已应用到 ' + r.applied + ' 个账号，并设为新号默认'); loadAccounts(); } catch (e) { toast(e.message); }
+}
+
+let curTab = 'farm', curSub = 'land';
+function openDetail(id) {
+  curId = id; curTab = 'farm'; curSub = 'land';
+  $('#detName').textContent = accounts.find((x) => x.id === id).name;
+  document.querySelectorAll('#detTabs .tab').forEach((t) => t.classList.toggle('on', t.dataset.t === 'farm'));
+  show('mDet'); renderBody();
+  clearInterval(logTimer); logTimer = setInterval(() => { if (curTab === 'logs') refreshLogs(); }, 4000);
+}
+function detTab(t) {
+  curTab = t;
+  document.querySelectorAll('#detTabs .tab').forEach((x) => x.classList.toggle('on', x.dataset.t === t));
+  renderBody();
+}
+function renderBody() {
+  const b = $('#tabBody');
+  if (curTab === 'logs') { b.innerHTML = '<div class="logs" id="logView">加载中…</div>'; refreshLogs(); return; }
+  if (curTab === 'farm') return renderFarm();
+  return renderPlugin(curTab);
+}
+
+// 通用动作调用；done 回调用于刷新当前视图
+async function act(type, params = {}, done) {
+  toast('执行中…');
+  try { const r = await api('/accounts/' + curId + '/action', { method: 'POST', body: { type, ...params } }); toast(String(r.result || '完成').slice(0, 60)); if (done) done(); }
+  catch (e) { toast('失败: ' + e.message); }
+}
+async function pluginAct(plugin, type, params = {}, done) {
+  toast('执行中…');
+  try { const r = await api('/accounts/' + curId + '/plugin/' + plugin, { method: 'POST', body: { type, ...params } }); toast(String(r.result ?? '完成').slice(0, 60)); if (done) done(); }
+  catch (e) { toast('失败: ' + e.message); }
+}
+async function refreshLogs() {
+  const el = $('#logView'); if (!el) return;
+  const logs = await api('/accounts/' + curId + '/logs').catch(() => []);
+  el.textContent = logs.slice(-150).map((l) => `${new Date(l.ts).toLocaleTimeString()} ${l.msg}`).join('\n') || '暂无日志';
+  el.scrollTop = el.scrollHeight;
+}
+
+// ============ 农场标签 ============
+const FARM_SUBS = [['land','土地'],['bag','种子袋'],['store','仓库'],['shop','商店'],['task','任务'],['steal','偷菜'],['func','功能']];
+function renderFarm() {
+  $('#tabBody').innerHTML = `
+    <div class="acts">
+      <button class="btn s" onclick="act('harvestAll',{},farmReload)">一键收</button>
+      <button class="btn s" onclick="act('digAll',{},farmReload)">一键耕</button>
+      <button class="btn s" onclick="act('weedAll')">除草</button>
+      <button class="btn s" onclick="act('killAll')">杀虫</button>
+      <button class="btn s" onclick="act('waterAll')">浇水</button>
+      <button class="btn s" onclick="act('muckAll')">施肥</button>
+      <button class="btn s" onclick="act('lockAll',{toLocked:true})">全锁</button>
+      <button class="btn s" style="color:var(--warn)" onclick="act('sellAll',{},farmReload)">全售</button>
+      <button class="btn s" onclick="act('farmSignin')">农场签到</button>
+      <button class="btn s" onclick="act('groupSignin')">群组签到</button>
+      <button class="btn s" onclick="act('qqSignin')">QQ签到</button>
+      <button class="btn s" onclick="act('grabOnce')">抢积分(试)</button>
+    </div>
+    <div class="subtabs" id="farmSubtabs">${FARM_SUBS.map(([k, n]) => `<span class="subtab ${k === curSub ? 'on' : ''}" onclick="farmSub('${k}')">${n}</span>`).join('')}</div>
+    <div id="farmSubView"><div class="hint">加载中…</div></div>`;
+  farmSub(curSub);
+}
+function farmReload() { if (curTab === 'farm') farmSub(curSub); }
+async function farmSub(view) {
+  curSub = view;
+  document.querySelectorAll('#farmSubtabs .subtab').forEach((s) => s.classList.toggle('on', s.textContent === (FARM_SUBS.find(([k]) => k === view) || [])[1]));
+  const V = $('#farmSubView'); if (!V) return;
+  V.innerHTML = '<div class="hint">加载中…</div>';
+  try {
+    if (view === 'land') {
+      const f = await api('/accounts/' + curId + '/farm');
+      const ripe = f.lands.filter((l) => l.canHarvest).length;
+      const growing = f.lands.filter((l) => l.matureIn).map((l) => FarmClient_matureMin(l.matureIn)).filter((x) => x != null);
+      const soonest = growing.length ? Math.min(...growing) : null;
+      const summary = ripe > 0 ? `${ripe} 块可收割` : (soonest != null ? `最近 ${soonest >= 60 ? Math.floor(soonest / 60) + '时' + (soonest % 60) + '分' : soonest + '分'}后成熟` : '无生长中作物');
+      V.innerHTML = `<div class="stats"><span>等级 <b>${f.level}</b></span><span>金币 <b>${Number(f.coin).toLocaleString()}</b></span><span>土地 <b>${f.lands.length}</b></span></div><div class="hint" style="color:var(--acc)">🌾 ${summary}</div>` +
+        f.lands.map((l) => `<div class="li"><div class="n">${l.black ? '黑' : ''}地${l.pos} <b>${esc(l.crop || '空地')}</b> <small>${l.mature ? '可收割' : esc(l.matureIn || (l.empty ? '空地' : '生长中'))}</small></div><div class="r">
+        ${l.canHarvest ? `<button class="btn s p" onclick="act('harvest',{landId:${l.landId}},farmReload)">收割</button>` : ''}
+        <button class="btn s" onclick="act('waterLand',{landId:${l.landId},tuid:0})">浇</button>
+        <button class="btn s" onclick="act('muckLand',{landId:${l.landId}})">肥</button>
+      </div></div>`).join('');
+    } else if (view === 'bag') {
+      const bag = await api('/accounts/' + curId + '/bag');
+      V.innerHTML = bag.length ? bag.map((s) => `<div class="li"><div class="n">${esc(s.name)} <small>x${s.count}</small></div><div class="r">
+        <input type="number" id="bag_${s.seedsId}" value="1" min="1"><button class="btn s p" onclick="act('sow',{seedsId:${s.seedsId},num:+document.getElementById('bag_${s.seedsId}').value},farmReload)">种植</button></div></div>`).join('') : '<div class="hint">种子袋为空</div>';
+    } else if (view === 'store') {
+      const st = await api('/accounts/' + curId + '/store');
+      V.innerHTML = `<div class="hint">仓库总价约 ${Number(st.totalValue).toLocaleString()} 金币</div>` + (st.items.length ? st.items.map((it) => `<div class="li"><div class="n">${esc(it.name)} <small>x${it.count}${it.locked ? ' 🔒' : ''}</small></div><div class="r">
+        <input type="number" id="sell_${it.seedsId}" value="${it.count}" min="1"><button class="btn s" onclick="act('sell',{seedsId:${it.seedsId},num:+document.getElementById('sell_${it.seedsId}').value},farmReload)">卖</button>
+        <button class="btn s" onclick="act('lock',{seedsId:${it.seedsId},toLocked:${!it.locked}},farmReload)">${it.locked ? '解锁' : '锁'}</button></div></div>`).join('') : '<div class="hint">仓库为空</div>');
+    } else if (view === 'shop') {
+      const lv = window._shopLv || 0;
+      const goods = await api('/accounts/' + curId + '/shop?category=0&lv=' + lv);
+      V.innerHTML = '<div class="subtabs">' + [0,1,2,3,4,5].map((n) => `<span class="subtab ${n===lv?'on':''}" onclick="window._shopLv=${n};farmSub('shop')">档${n}</span>`).join('') + '</div>' +
+        (goods.length ? goods.map((g) => `<div class="li"><div class="n">${esc(g.name)} <small>Lv${g.level} ${g.price}币</small></div><div class="r">
+        <input type="number" id="buy_${g.seedsId}" value="1" min="1"><button class="btn s p" onclick="act('buy',{seedsId:${g.seedsId},num:+document.getElementById('buy_${g.seedsId}').value})">买</button></div></div>`).join('') : '<div class="hint">该档位无种子</div>');
+    } else if (view === 'task') {
+      const tasks = await api('/accounts/' + curId + '/tasks');
+      V.innerHTML = '<div class="hint">上交为消耗操作，请确认库存充足后再交</div>' + tasks.map((t) => `<div class="li"><div class="n">${esc(t.name)}</div><div class="r">
+        <button class="btn s" onclick="if(confirm('确认上交任务：${esc(t.name)}？'))act('submitTask',{taskId:${t.taskId}})">上交</button></div></div>`).join('');
+    } else if (view === 'steal') {
+      const oper = window._rankOper || 0;
+      const fr = await api('/accounts/' + curId + '/rank?oper=' + oper);
+      const opers = [['0','偷菜'],['1','除草'],['2','杀虫'],['3','浇水']];
+      V.innerHTML = '<div class="subtabs">' + opers.map(([o,n]) => `<span class="subtab ${+o===oper?'on':''}" onclick="window._rankOper=${o};farmSub('steal')">${n}榜</span>`).join('') + '</div>' +
+        `<div class="hint">共 ${fr.length} 人(已翻页汇总)。偷菜白名单在右上"设置"里，全局生效。</div>` +
+        fr.map((f) => `<div class="li"><div class="n">${f.rank}. ${esc(f.name)} <small>uid ${f.uid}</small></div><div class="r">
+        <button class="btn s" onclick="openBrowser2(${f.uid})">看农场</button>
+        <button class="btn s" onclick="addWhite(${f.uid},'${esc(f.name)}')">加白名单</button></div></div>`).join('');
+    } else if (view === 'func') {
+      V.innerHTML = `<div class="hint">一键功能开通（消耗金币，谨慎）</div>
+        <div class="li"><div class="n">三倍经验地卡</div><div class="r"><button class="btn s" onclick="act('useExp2All')">一键用</button></div></div>
+        <div class="li"><div class="n">十倍金币地卡</div><div class="r"><button class="btn s" onclick="act('useCoin2All')">一键用</button></div></div>
+        <div class="li"><div class="n">开通一键施肥</div><div class="r"><button class="btn s" onclick="if(confirm('花费金币开通？'))act('openFun',{actionId:6})">开通</button></div></div>
+        <div class="li"><div class="n">开通一键浇水</div><div class="r"><button class="btn s" onclick="if(confirm('花费金币开通？'))act('openFun',{actionId:5})">开通</button></div></div>
+        <div class="li"><div class="n">开通一键锁定</div><div class="r"><button class="btn s" onclick="if(confirm('花费金币开通？'))act('openFun',{actionId:7})">开通</button></div></div>`;
+    }
+  } catch (e) { V.innerHTML = `<div class="hint" style="color:var(--err)">加载失败: ${esc(e.message)}</div>`; }
+}
+function openBrowser2(uid) {
+  // 用当前账号身份在本地浏览器查看该好友农场（经代理）
+  window.open('/b/' + curId + '/plugins/farm/index.do?uid=' + uid, '_blank');
+}
+
+// ============ 牧场/宠物/圣衣 标签 ============
+const PLUGIN_BTNS = {
+  pasture: [['dailyAward','每日礼包'],['harvestAll','一键收获'],['feedAnimals','喂食动物'],['cleanAnimals','洗澡'],['restock','补栏饲养'],['feedDog','喂狗'],['pioneer','拓荒'],['fattenAll','催肥'],['nurseAll','育儿']],
+  pet: [['dailyAllowance','每日津贴'],['attendance','报到全勤'],['harvestWork','种花收获'],['feed','喂食']],
+  petTrain: [['3','培养智慧'],['2','培养斗志'],['1','培养气质'],['4','培养体贴']],
+  gold: [['dailyReward','每日奖励'],['practice','修炼'],['dig','搜寻打怪']],
+};
+async function renderPlugin(plugin) {
+  const b = $('#tabBody');
+  b.innerHTML = '<div class="gInfo" id="pgInfo">加载状态中…</div><div class="acts" id="pgActs"></div><div id="pgDetail"></div>';
+  $('#pgActs').innerHTML = PLUGIN_BTNS[plugin].map(([t, n]) => `<button class="btn s" onclick="pluginAct('${plugin}','${t}',{},()=>renderPlugin('${plugin}'))">${n}</button>`).join('') +
+    (plugin === 'pasture' ? `<button class="btn s p" onclick="pastureHarvestEach()">逐舍收获</button>` : '');
+  try {
+    const r = await api('/accounts/' + curId + '/plugin/' + plugin, { method: 'POST', body: { type: 'info' } });
+    const i = r.result || {};
+    if (plugin === 'pasture') {
+      $('#pgInfo').innerHTML = `牧场 <b>Lv${i.level}</b> · 开心币 <b>${Number(i.happyCoin||0).toLocaleString()}</b> · 可收获 <b>${(i.harvestable||[]).length}</b> · 待喂食 <b>${i.needFeed||0}</b> · 闲置 <b>${(i.idleCorrals||[]).length}</b>${i.dogHungry ? ' · 🐕挨饿' : ''}`;
+      // 每圈舍倒计时明细
+      if (i.corrals && i.corrals.length) $('#pgDetail').innerHTML = '<div class="hint">圈舍状态</div>' + i.corrals.map((c) => `<div class="li"><div class="n">雌舍${c.pos} <b>${esc(c.animal || '闲置')}</b> <small>${esc(c.status || '')}</small></div><div class="r"><small style="color:${c.harvestable ? 'var(--acc)' : 'var(--dim)'}">${c.harvestable ? '可收获' : (c.matureIn ? esc(c.matureIn) : (c.idle ? '待饲养' : ''))}</small></div></div>`).join('');
+    } else if (plugin === 'pet') {
+      $('#pgInfo').innerHTML = `宠物 <b>Lv${i.level}</b> · 珍珠 <b>${i.pearl||0}</b> · ${esc(i.hunger||'')} ${esc(i.stamina||'')}${i.sick ? ' · 🤒生病(需药丸)' : ''}`;
+      // 培养区
+      const tr = await api('/accounts/' + curId + '/plugin/pet', { method: 'POST', body: { type: 'trainInfo' } }).then((r) => r.result).catch(() => null);
+      if (tr) {
+        const a = tr.attrs || {};
+        $('#pgDetail').innerHTML = `<div class="hint">培养 ${tr.training ? `· 正在${esc(tr.current)} 剩${tr.remainMin}分钟` : '· 空闲'} · 压力${tr.pressure}</div>` +
+          `<div class="li"><div class="n">智慧 ${a.智慧} · 斗志 ${a.斗志} · 气质 ${a.气质} · 体贴 ${a.体贴}</div></div>` +
+          '<div class="acts" style="margin-top:8px">' + PLUGIN_BTNS.petTrain.map(([wt, n]) => `<button class="btn s" onclick="pluginAct('pet','train',{wt:${wt}},()=>renderPlugin('pet'))">${n}</button>`).join('') + '</div>';
+      }
+    }
+    else $('#pgInfo').innerHTML = `圣衣 <b>Lv${i.level}</b> · 铜币 <b>${Number(i.coin||0).toLocaleString()}</b> · ${esc(i.hp||'')} · 小宇宙 ${i.cosmos||0}`;
+  } catch (e) { $('#pgInfo').innerHTML = `<span style="color:var(--err)">状态加载失败: ${esc(e.message)}</span>`; }
+}
+async function pastureHarvestEach() {
+  try {
+    const r = await api('/accounts/' + curId + '/plugin/pasture', { method: 'POST', body: { type: 'info' } });
+    const ids = (r.result || {}).harvestable || [];
+    if (!ids.length) return toast('无可收获圈舍');
+    toast(`收获 ${ids.length} 个圈舍…`);
+    for (const id of ids) await api('/accounts/' + curId + '/plugin/pasture', { method: 'POST', body: { type: 'harvest', id } });
+    toast('收获完成'); renderPlugin('pasture');
+  } catch (e) { toast('失败: ' + e.message); }
+}
+async function openSignin() {
+  try {
+    const s = await api('/accounts/' + curId + '/signin');
+    curRegkey = s.regkey;
+    $('#capImg').src = s.img ? '/api/accounts/' + curId + '/captcha-img?url=' + encodeURIComponent(s.img) : '';
+    $('#capImg').onclick = openSignin;
+    $('#capIn').value = ''; show('mSign');
+  } catch (e) { toast('获取验证码失败: ' + e.message); }
+}
+async function doSignin() {
+  try { const r = await api('/accounts/' + curId + '/signin', { method: 'POST', body: { regkey: curRegkey, authnum: $('#capIn').value.trim() } }); hide('mSign'); toast(r.result || '完成'); }
+  catch (e) { toast('签到失败: ' + e.message); }
+}
+
+document.querySelectorAll('.mask').forEach((m) => m.addEventListener('click', (e) => { if (e.target === m) m.classList.remove('show'); }));
+loadAccounts();
+setInterval(loadAccounts, 15000);
+</script>
+</body>
+</html>

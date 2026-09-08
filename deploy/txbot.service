@@ -1,0 +1,30 @@
+# Linux systemd 服务单元
+# 安装步骤：
+#   1. 改下面的 User、WorkingDirectory、ExecStart 路径为你的实际值
+#   2. sudo cp deploy/txbot.service /etc/systemd/system/txbot.service
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now txbot     # 开机自启 + 立即启动
+#   5. systemctl status txbot                # 查看状态
+#   6. journalctl -u txbot -f                # 实时日志
+
+[Unit]
+Description=txbot 天下农场托管服务
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 改成运行服务的系统用户（不建议用 root）
+User=youruser
+# 改成项目绝对路径
+WorkingDirectory=/opt/txbot
+# node 绝对路径用 `which node` 查；nvm 用户填 ~/.nvm/versions/node/vXX/bin/node
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=8787
+Environment=HOST=0.0.0.0
+
+[Install]
+WantedBy=multi-user.target

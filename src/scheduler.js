@@ -129,7 +129,7 @@ async function runFarmJob(id, c) {
         if (cfg.sowSeedsId === 'recommend') {
           const rec = await c.getRecommendedSeed().catch(() => null);
           if (rec) { targetId = rec.seedsId; targetName = rec.name; log(id, `官方推荐种植: ${rec.name}(id${rec.seedsId})`); }
-          else log(id, '未获取到官方推荐种子');
+          else log(id, '未获取到官方推荐种子(等级不够等原因)，改为随便种仓库现有种子');
         } else {
           targetId = +cfg.sowSeedsId;
         }
@@ -152,6 +152,9 @@ async function runFarmJob(id, c) {
             }
           }
         }
+        // recommend 模式查不到官方推荐(等级不够等)时，退化成 auto：随便种仓库里数量最多的现有种子，
+        // 别让地空着——总比"无可用种子"啥也不做强
+        if (cfg.sowSeedsId === 'recommend' && !targetId) seed = bag.sort((a, b) => b.count - a.count)[0];
       }
       if (seed && seed.count > 0) {
         const want = Math.min(emptyLands.length, seed.count);

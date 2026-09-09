@@ -248,7 +248,16 @@ async function runFarmTaskJob(id) {
     rewards.push(`${t.name}:${m ? m[1].trim() : '完成'}`);
     await sleep(800 + Math.random() * 800);
   }
-  log(id, done ? `完成${done}个日常任务: ${rewards.join(' / ')}` : `任务巡检: ${details.filter(Boolean).length}个待办均库存不足`);
+  const pending = details.filter(Boolean).filter((t) => !t.canFinish);
+  if (done) {
+    log(id, `完成${done}个日常任务: ${rewards.join(' / ')}`);
+  } else if (pending.length) {
+    // 列出每个任务缺什么、缺多少，方便直接去买/去种对应作物补齐库存
+    const detail = pending.map((t) => `${t.name || t.taskId}(需${t.need || '?'}，现有${t.have})`).join('；');
+    log(id, `任务巡检: ${pending.length}个待办均库存不足 — ${detail}`);
+  } else {
+    log(id, '任务巡检: 无待办任务');
+  }
   setJob(id, 'farmtask', pollNext(store.get(id).config));
 }
 

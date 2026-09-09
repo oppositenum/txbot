@@ -4,6 +4,7 @@
 const { FarmClient, sleep } = require('./client');
 const { PastureClient, PetClient, GoldClient } = require('./plugins');
 const { farmSignin, groupSignin, qqSignin } = require('./signin');
+const msgFilter = require('./msgFilter');
 const store = require('./store');
 
 // 本地时区的"今天"日期字符串。注意：不能用 toISOString()，那是 UTC——
@@ -66,6 +67,7 @@ function jobEnabled(acc, type) {
   if (type === 'pettrain') return !!cfg.petTrain;
   if (type === 'grab') return !!cfg.grabPoints;
   if (type === 'goldfight') return !!cfg.goldFight;
+  if (type === 'msgwatch') return !!cfg.msgWatch;
   return false;
 }
 
@@ -537,6 +539,50 @@ async function runGrabJob(id) {
   log(id, `抢积分结束：${rounds}轮，抢到${grabbed}次${full ? '(已满)' : ''}；下次 ${new Date(store.get(id).status.jobs.grab).toLocaleString()}`);
 }
 
+// ==================== msgwatch job（好友留言骚扰监测，先只记日志，不自动删）====================
+// 首次巡检(msgSeenMaxId 还没有)会往前翻最多 MAX_BOOTSTRAP_PAGES 页，把历史积压的留言也判一遍；
+// 之后每次只从第1页往前翻，直到翻到的id都 <= 上次记录的最大id 为止（新留言在前，翻到旧的就说明追上了）。
+async function runMsgWatchJob(id, c) {
+  const acc = store.get(id);
+  const cfg = acc.config;
+  const lastMax = acc.status.msgSeenMaxId || 0;
+  const maxPages = lastMax ? 10 : 25; // 首次巡检多翻几页把积压的也扫一遍，封顶125条左右
+  const newIds = [];
+  let seenMax = lastMax;
+  for (let page = 1; page <= maxPages; page++) {
+    const ids = await c.getMessagePage(page);
+    if (!ids.length) break;
+    seenMax = Math.max(seenMax, ...ids);
+    const fresh = ids.filter((i) => i > lastMax);
+    newIds.push(...fresh);
+    if (fresh.length < ids.length) break; // 这页里已经出现 <= lastMax 的id，说明追上了，不用再往后翻
+    await sleep(300 + Math.random() * 300);
+  }
+  let flagged = 0;
+  const offenders = new Set(store.getSettings().msgOffenders || []);
+  let offendersChanged = false;
+  for (const mid of newIds) {
+    let det;
+    try { det = await c.getMessageDetail(mid); } catch { continue; }
+    if (!det.uid) continue;
+    const known = offenders.has(det.uid);
+    const r = msgFilter.classify(det.body, det.from, known);
+    if (r.suspicious) {
+      flagged++;
+      log(id, `⚠️疑似骚扰留言 来自${det.from}(${det.uid}): ${det.body.slice(0, 60)} [命中:${r.matched.join(',')}]${cfg.msgAutoDelete ? '' : ' (观察期，未删除)'}`);
+      if (!known) { offenders.add(det.uid); offendersChanged = true; }
+      if (cfg.msgAutoDelete) {
+        try { await c.deleteMessage(mid); log(id, `已删除留言#${mid}`); } catch (e) { log(id, `删除留言#${mid}失败: ${e.message}`); }
+      }
+    }
+    await sleep(300 + Math.random() * 300);
+  }
+  if (offendersChanged) store.setSettings({ msgOffenders: [...offenders] });
+  if (seenMax > lastMax) store.setStatus(id, { msgSeenMaxId: seenMax });
+  log(id, newIds.length ? `留言巡检: 新增${newIds.length}条，命中${flagged}条` : '留言巡检: 无新留言');
+  setJob(id, 'msgwatch', Date.now() + jitter((cfg.msgWatchIntervalMin || 60) * 60000));
+}
+
 // ==================== job 执行包装（并发+登录重试）====================
 async function runJob(id, type, retried = false) {
   const acc = store.get(id);
@@ -561,6 +607,7 @@ async function runJob(id, type, retried = false) {
       else if (type === 'pettrain') await runPetTrainJob(id, c);
       else if (type === 'grab') await runGrabJob(id);
       else if (type === 'goldfight') await runGoldFightJob(id);
+      else if (type === 'msgwatch') await runMsgWatchJob(id, c);
     })();
     // 看门狗兜底：单次请求已有超时保护，这里再兜一层，防止任何未预见的挂起
     // (死循环/异常累积)把 running 锁永久卡死、该任务从此再也不被调度
@@ -611,7 +658,7 @@ function tick() {
     if (!acc.config.enabled || acc.status.needLogin) continue;
     const jobs = acc.status.jobs || {};
     let dirty = false;
-    for (const type of ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pasturefeed', 'pettrain', 'grab', 'goldfight']) {
+    for (const type of ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pasturefeed', 'pettrain', 'grab', 'goldfight', 'msgwatch']) {
       if (!jobEnabled(acc, type)) continue;
       if (running.has(`${acc.id}:${type}`)) continue; // 该账号该任务已在跑（同账号不同任务可并行）
       let nr = jobs[type];

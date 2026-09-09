@@ -139,6 +139,7 @@ main{max-width:640px;margin:0 auto;padding:16px}
     <div class="f"><label>抢积分·轮询间隔(秒)</label><input type="number" id="cGrabPoll" min="2"></div>
     <div class="f"><label>圣衣打怪·只打等级≤</label><input type="number" id="cGoldMaxLv" min="1"></div>
     <div class="f"><label>圣衣打怪·兜底轮询上限(分钟)</label><input type="number" id="cGoldPoll" min="1"></div>
+    <div class="f"><label>留言监测·巡检间隔(分钟)</label><input type="number" id="cMsgWatchInt" min="10"></div>
   </div>
   <div class="f"><label>宠物培养属性(可多选，轮换培养；某个练不了自动换下一个)</label>
     <div id="cPetTrainWts" style="display:flex;flex-wrap:wrap;gap:8px">
@@ -222,6 +223,8 @@ const FEATURES = [
   ['petTrain','宠物培养','定时循环培养指定属性'],
   ['goldFight','圣衣打怪','只打配置等级以下的怪，自动跳过公会地图'],
   ['grabPoints','抢积分','每天定时突发抢聊天室字卡积分'],
+  ['msgWatch','留言骚扰监测','定时巡检好友留言，命中判定只记日志(建议先观察几天)'],
+  ['msgAutoDelete','留言骚扰自动删除','⚠️需先开启上面的监测；判定命中直接删除，观察准确后再开'],
 ];
 
 function jobEnabledUI(a, type) {
@@ -358,7 +361,7 @@ async function loadAccounts() {
       </div>
       <div class="meta" style="margin-top:6px">任务: ${feats}</div>
       ${overviewLine(st)}
-      ${a.config.enabled ? `<div class="meta">下次唤醒: 农场 ${nextT(jobs.farm)}${jobEnabledUI(a,'daily') ? ' · 每日 ' + nextT(jobs.daily) : ''}${(a.config.pastureLoop||a.config.pioneer) ? ' · 牧场 ' + nextT(jobs.pasture) : ''}${a.config.pastureFeed ? ' · 牧场喂食 ' + nextT(jobs.pasturefeed) : ''}${a.config.petTrain ? ' · 宠物培养 ' + nextT(jobs.pettrain) : ''}${a.config.grabPoints ? ' · 抢积分 ' + nextT(jobs.grab) : ''}${a.config.goldFight ? ' · 圣衣打怪 ' + nextT(jobs.goldfight) : ''}</div>` : ''}
+      ${a.config.enabled ? `<div class="meta">下次唤醒: 农场 ${nextT(jobs.farm)}${jobEnabledUI(a,'daily') ? ' · 每日 ' + nextT(jobs.daily) : ''}${(a.config.pastureLoop||a.config.pioneer) ? ' · 牧场 ' + nextT(jobs.pasture) : ''}${a.config.pastureFeed ? ' · 牧场喂食 ' + nextT(jobs.pasturefeed) : ''}${a.config.petTrain ? ' · 宠物培养 ' + nextT(jobs.pettrain) : ''}${a.config.grabPoints ? ' · 抢积分 ' + nextT(jobs.grab) : ''}${a.config.goldFight ? ' · 圣衣打怪 ' + nextT(jobs.goldfight) : ''}${a.config.msgWatch ? ' · 留言监测 ' + nextT(jobs.msgwatch) : ''}</div>` : ''}
       <div class="meta">上次: ${st.lastRun ? new Date(st.lastRun).toLocaleTimeString() + ' · ' + esc(st.lastResult) : '—'}</div>
       <div class="acts">
         <button class="btn s p" onclick="runNow('${a.id}')">立即执行</button>
@@ -430,7 +433,7 @@ function openCfg(id) {
   const wts = (a.config.petTrainWts && a.config.petTrainWts.length) ? a.config.petTrainWts.map(String) : [String(a.config.petTrainWt || 3)];
   document.querySelectorAll('#cPetTrainWts input').forEach((i) => (i.checked = wts.includes(i.value)));
   $('#cGrabRoom').value = a.config.grabRoom || 696; $('#cGrabHour').value = a.config.grabHour ?? 12; $('#cGrabMin').value = a.config.grabMin ?? 0; $('#cGrabWin').value = a.config.grabWindowMin || 10; $('#cGrabPoll').value = a.config.grabPollSec || 5;
-  $('#cGoldMaxLv').value = a.config.goldFightMaxLevel || 29; $('#cGoldPoll').value = a.config.goldFightPollMaxMin || 5;
+  $('#cGoldMaxLv').value = a.config.goldFightMaxLevel || 29; $('#cGoldPoll').value = a.config.goldFightPollMaxMin || 5; $('#cMsgWatchInt').value = a.config.msgWatchIntervalMin || 60;
   const sel = $('#cSeed');
   const baseOpts = '<option value="auto">自动（种子袋数量最多）</option><option value="recommend">按推荐种子种（等级推荐，随等级变化）</option>';
   sel.innerHTML = baseOpts + `<option value="${a.config.sowSeedsId}">加载种子目录中…</option>`;
@@ -448,7 +451,7 @@ function collectCfg() {
   const num = (v, def) => (v === '' || v == null || isNaN(+v) ? def : +v); // 0 是合法值(不限)，不能用 || 兜底(会把0吞成默认值)
   const config = { farmPollMaxMin: +$('#cPoll').value || 30, sowSeedsId: $('#cSeed').value, stealMax: num($('#cStealMax').value, 10), careMax: num($('#cCareMax').value, 10), pastureIntervalMin: +$('#cPastureInt').value || 120, pastureFeedIntervalMin: +$('#cPastureFeedInt').value || 210, pioneerScene: +$('#cPioScene').value || 1, pioneerAction: +$('#cPioAction').value || 1, petTrainWts, petTrainWt: petTrainWts[0],
     grabRoom: +$('#cGrabRoom').value || 696, grabHour: +$('#cGrabHour').value || 0, grabMin: +$('#cGrabMin').value || 0, grabWindowMin: +$('#cGrabWin').value || 10, grabPollSec: +$('#cGrabPoll').value || 5,
-    goldFightMaxLevel: +$('#cGoldMaxLv').value || 29, goldFightPollMaxMin: +$('#cGoldPoll').value || 5 };
+    goldFightMaxLevel: +$('#cGoldMaxLv').value || 29, goldFightPollMaxMin: +$('#cGoldPoll').value || 5, msgWatchIntervalMin: +$('#cMsgWatchInt').value || 60 };
   document.querySelectorAll('#cfgOpts input[data-k]').forEach((i) => (config[i.dataset.k] = i.checked));
   return config;
 }

@@ -50,6 +50,10 @@ const DEFAULT_CONFIG = {
   goldFight: false,
   goldFightMaxLevel: 29,   // 只打这个等级及以下的怪
   goldFightPollMaxMin: 5,  // 兜底轮询上限(分钟)，实际按怪物冷却剩余时间精确唤醒
+  // ===== 好友留言骚扰监测（只监测+记日志，暂不自动删；判定命中会记到全局惯犯名单）=====
+  msgWatch: false,
+  msgWatchIntervalMin: 60,   // 巡检间隔(分钟)
+  msgAutoDelete: false,      // 观察期关闭；确认判定准了再打开自动删除
 };
 
 const DEFAULT_SETTINGS = {
@@ -63,6 +67,7 @@ const DEFAULT_SETTINGS = {
                          // 行为模式，多账号同时刷容易被识别成"批量刷"，串行更安全
   stealWhitelist: [],    // 全局偷菜白名单 uid（遇到这些用户不偷）
   proxies: [],           // 已保存的代理列表 [{label, url}]，供"代理管理"批量勾选账号分配用
+  msgOffenders: [],      // 留言骚扰惯犯 uid 名单(全局共享，跨账号)：命中过一次的人，以后发的消息不用再逐条判定内容
 };
 
 function load() {

@@ -363,6 +363,24 @@ class FarmClient {
   // 完成任务，领取奖励(经验/金币/道具)；只有库存够时(getTaskInfo().canFinish)才应调用
   async finishTask(orderId) { return this._act(`finishOrder.do?orderId=${orderId}`); }
 
+  // ===== 好友留言收件箱(/im/ 命名空间，跟农场/牧场/宠物/圣衣是独立的社交功能) =====
+  // 列出一页留言的 id（新消息排在前，第1页=最新）
+  async getMessagePage(page = 1) {
+    const html = await this.req(`https://tx.com.cn/im/cs/commonReceiveManage.do?page=${page}`);
+    return [...new Set([...html.matchAll(/commonReceiveDetail\.do\?id=(\d+)/g)].map((m) => +m[1]))];
+  }
+  // 读取单条留言详情：发件人昵称/uid + 正文
+  async getMessageDetail(id) {
+    const html = await this.req(`https://tx.com.cn/im/cs/commonReceiveDetail.do?id=${id}`);
+    const t = strip(html);
+    const m = t.match(/阅读消息\s*来自[:：]\s*([^\(]+)\((\d+)\)\s*([\s\S]*?)\s*\[\d\d-\d\d/);
+    return { id, from: m ? m[1].trim() : null, uid: m ? m[2] : null, body: m ? m[3].trim() : '' };
+  }
+  // 删除单条留言(详情页"删除"链接，比列表页的批量接口简单——不需要凑 RIDS/checkbox 顺序)
+  async deleteMessage(id) {
+    return FarmClient.resultText(await this.req(`https://tx.com.cn/im/cs/commonReceiveRemove.do?id=${id}`));
+  }
+
   // 商店种子列表
   static parseShopItems(html) {
     return [...html.matchAll(/([一-龥A-Za-z0-9]+)[:：](\d+)级[\s\S]{0,100}?单价[:：](\d+)金币[\s\S]{0,200}?seedsInfo\.do\?seedsId=(\d+)/g)]

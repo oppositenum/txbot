@@ -283,7 +283,7 @@ async function runStealJob(id) {
       const m = l.canSteal.replace(/&amp;/g, '&').match(/landId=(\d+)&tuid=(\d+)/);
       if (!m) continue;
       await c.steal(m[1], m[2]); stolen++;
-      await sleep(1500 + Math.random() * 2000);
+      await sleep(100 + Math.random() * 200);
     }
   }
   log(id, stolen ? `偷菜 ${stolen} 块${skipped ? ` (白名单跳过${skipped}人)` : ''}` : `偷菜巡检: 无可偷的地${skipped ? `(白名单跳过${skipped}人)` : ''}`);
@@ -312,7 +312,7 @@ async function runCareJob(id) {
           const r = await pc.req(fix(link)).then(FarmClient.resultText);
           n++;
           if (doneRe.test(r) || /失败|不能|已被/.test(r)) break;
-          await sleep(1200 + Math.random() * 1200);
+          await sleep(100 + Math.random() * 200);
         }
       }
     }
@@ -334,7 +334,7 @@ async function runCareJob(id) {
         n++;
         const next = html.match(/water\.do\?landId=\d+&(?:amp;)?tuid=\d+/);
         link = next ? fix(next[0]) : null;
-        if (link) await sleep(700 + Math.random() * 700);
+        if (link) await sleep(100 + Math.random() * 200);
       }
     }
     return n;

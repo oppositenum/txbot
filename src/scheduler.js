@@ -62,6 +62,7 @@ function jobEnabled(acc, type) {
   if (type === 'farmtask') return !!cfg.farmTasks;
   if (type === 'daily') return !!(cfg.pastureDaily || cfg.petDaily || cfg.goldDaily || cfg.farmSignin || cfg.groupSignin || cfg.qqSignin);
   if (type === 'pasture') return !!(cfg.pastureLoop || cfg.pioneer);
+  if (type === 'pasturefeed') return !!cfg.pastureFeed;
   if (type === 'pettrain') return !!cfg.petTrain;
   if (type === 'grab') return !!cfg.grabPoints;
   if (type === 'goldfight') return !!cfg.goldFight;
@@ -421,7 +422,8 @@ async function runPastureJob(id, c) {
     // 先收获成熟的
     for (const hid of info.harvestable) { await p.harvest(hid); n++; }
     // 关键：喂食饥饿动物(否则"停止成长"永远长不大)+ 洗澡
-    fed = await p.feedAnimals();
+    const fr = await p.feedAnimals();
+    fed = fr.fed; if (fr.bought) log(id, '食料不足，已自动购买开心牧草x50');
     washed = await p.cleanAnimals();
     // 补栏空闲圈舍
     rs = await p.restockAll();
@@ -442,6 +444,24 @@ async function runPastureJob(id, c) {
   if (cfg.pastureLoop) parts.push(`收获${n} 喂食${fed} 洗澡${washed} 补栏${rs.n}${rs.name ? '×' + rs.name : ''}`);
   if (pio) parts.push('拓荒:' + pio);
   if (parts.length) log(id, `牧场 ${parts.join(' / ')}；下次 ${new Date(next).toLocaleTimeString()}${matureMin != null ? `(约${matureMin}分钟后)` : ''}`);
+}
+
+// ==================== 牧场独立喂食 job（不依赖 pastureLoop/pastureDaily，按固定间隔巡检）====================
+// 动物饥饿后"停止成长"，光靠每日一次的 pastureDaily 或依赖 pastureLoop 才有的喂食，中间空窗太长；
+// 独立拆出来按 pastureFeedIntervalMin(默认3.5小时) 轮询，跟其他牧场逻辑各自独立、互不阻塞
+async function runPastureFeedJob(id, c) {
+  const acc = store.get(id);
+  const cfg = acc.config;
+  const p = new PastureClient(c.jar, { proxy: acc.proxy });
+  const info = await p.getInfo();
+  if (info.dogHungry) await p.feedDog();
+  const { fed, bought } = await p.feedAnimals();
+  // 回写 needFeed，否则 UI 的"待喂食"角标会一直停留在喂食前读到的旧数字
+  const info2 = fed ? await p.getInfo() : info;
+  store.setStatus(id, { pastureInfo: { ...(acc.status.pastureInfo || {}), needFeed: info2.needFeed } });
+  log(id, `${fed ? `牧场喂食: ${fed}只` : '牧场巡检: 暂无待喂食动物'}${bought ? '(食料不足已自动购买开心牧草x50)' : ''}`);
+  const next = Date.now() + jitter((cfg.pastureFeedIntervalMin || 210) * 60000);
+  setJob(id, 'pasturefeed', next);
 }
 
 // ==================== 宠物培养循环 job ====================
@@ -537,6 +557,7 @@ async function runJob(id, type, retried = false) {
       else if (type === 'farmtask') await runFarmTaskJob(id);
       else if (type === 'daily') await runDailyJob(id, c);
       else if (type === 'pasture') await runPastureJob(id, c);
+      else if (type === 'pasturefeed') await runPastureFeedJob(id, c);
       else if (type === 'pettrain') await runPetTrainJob(id, c);
       else if (type === 'grab') await runGrabJob(id);
       else if (type === 'goldfight') await runGoldFightJob(id);
@@ -590,7 +611,7 @@ function tick() {
     if (!acc.config.enabled || acc.status.needLogin) continue;
     const jobs = acc.status.jobs || {};
     let dirty = false;
-    for (const type of ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pettrain', 'grab', 'goldfight']) {
+    for (const type of ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pasturefeed', 'pettrain', 'grab', 'goldfight']) {
       if (!jobEnabled(acc, type)) continue;
       if (running.has(`${acc.id}:${type}`)) continue; // 该账号该任务已在跑（同账号不同任务可并行）
       let nr = jobs[type];

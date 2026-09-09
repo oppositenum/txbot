@@ -81,14 +81,27 @@ class PastureClient extends FarmClient {
     const uid = this.jar.txuid || '';
     return R(await this.req(`useTool.do?toolid=6&fcorralid=0&uid=${uid}&pn=0`));
   }
-  // 喂食所有饥饿动物(吃饭)：停止成长的动物必须喂食才会继续生长
+  // 买食料(默认开心牧草 seedid=1，多种动物通用)；type=1固定食料分类
+  async buyFeed(seedid = 1, num = 50) { return R(await this.req(`buyFeed.do?type=1&seedid=${seedid}`, { method: 'POST', body: `num=${num}` })); }
+  // 喂食所有饥饿动物(吃饭)：停止成长的动物必须喂食才会继续生长。
+  // 关键坑：feedConfirm.do 请求哪怕食料库存不够也会正常200返回(不抛错)，页面里写着
+  // "牧草不够,你家的XX泪流满面"——旧代码没检查这段文字，把请求次数直接当成功次数，
+  // 实际一次都没喂进去。这里检测到库存不足就自动去 buyFeed.do 补50份再重试一次。
   async feedAnimals() {
     const uid = this.jar.txuid || '';
     const h = await this.req('index.do');
     const ids = [...new Set([...h.matchAll(/feedConfirm\.do\?id=(\d+)/g)].map((m) => m[1]))];
-    let n = 0;
-    for (const id of ids) { await this.req(`feedConfirm.do?id=${id}&uid=${uid}`); n++; }
-    return n;
+    let n = 0, bought = false;
+    for (const id of ids) {
+      let r = await this.req(`feedConfirm.do?id=${id}&uid=${uid}`);
+      if (/牧草不够|食料不够/.test(r) && !bought) {
+        await this.buyFeed(1, 50);
+        bought = true;
+        r = await this.req(`feedConfirm.do?id=${id}&uid=${uid}`);
+      }
+      if (!/牧草不够|食料不够/.test(r)) n++;
+    }
+    return { fed: n, bought };
   }
   // 给动物洗澡(clean)
   async cleanAnimals() {

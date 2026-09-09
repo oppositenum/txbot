@@ -128,6 +128,7 @@ main{max-width:640px;margin:0 auto;padding:16px}
     <div class="f"><label>偷菜上限(0=不限,偷完为止)</label><input type="number" id="cStealMax" min="0"></div>
     <div class="f"><label>助友上限(0=不限,全部干完)</label><input type="number" id="cCareMax" min="0"></div>
     <div class="f"><label>牧场巡检间隔(分钟)</label><input type="number" id="cPastureInt" min="10"></div>
+    <div class="f"><label>牧场喂食间隔(分钟，建议180-240)</label><input type="number" id="cPastureFeedInt" min="30"></div>
     <div class="f"><label>拓荒场景</label><select id="cPioScene"><option value="1">野猪林</option><option value="2">九寨沟</option><option value="3">西双版纳</option></select></div>
     <div class="f"><label>拓荒类型</label><select id="cPioAction"><option value="1">优质木材(30分)</option><option value="2">干草(30分)</option><option value="3">石块(50分)</option><option value="4">兽骨(10分)</option></select></div>
   </div>
@@ -214,6 +215,7 @@ const FEATURES = [
   ['careFriends','帮好友护理','除草/杀虫/浇水'],['sellAll','自动全售','卖掉未锁定果实⚠️'],
   ['pastureDaily','牧场每日','每日礼包+收获(每天一次)'],['petDaily','宠物每日','每日报道津贴(每天一次)'],
   ['goldDaily','圣衣每日','每日奖励宝箱(每天一次)'],['pastureLoop','牧场定时收获','按间隔巡检收获圈舍'],
+  ['pastureFeed','牧场定时喂食','独立于上面两项，按间隔巡检喂食饥饿动物(否则停止成长)'],
   ['pioneer','神殿拓荒','定时发起拓荒(到点自动掉落)'],
   ['sowAutoBuy','库存不足自动购种','指定/推荐种子没库存时自动去商店买够'],
   ['farmSignin','农场签到','每日自动签到(OCR验证码)'],['groupSignin','群组签到','每日自动签到(OCR验证码)'],['qqSignin','QQ签到','每日自动签到'],
@@ -356,7 +358,7 @@ async function loadAccounts() {
       </div>
       <div class="meta" style="margin-top:6px">任务: ${feats}</div>
       ${overviewLine(st)}
-      ${a.config.enabled ? `<div class="meta">下次唤醒: 农场 ${nextT(jobs.farm)}${jobEnabledUI(a,'daily') ? ' · 每日 ' + nextT(jobs.daily) : ''}${(a.config.pastureLoop||a.config.pioneer) ? ' · 牧场 ' + nextT(jobs.pasture) : ''}${a.config.petTrain ? ' · 宠物培养 ' + nextT(jobs.pettrain) : ''}${a.config.grabPoints ? ' · 抢积分 ' + nextT(jobs.grab) : ''}${a.config.goldFight ? ' · 圣衣打怪 ' + nextT(jobs.goldfight) : ''}</div>` : ''}
+      ${a.config.enabled ? `<div class="meta">下次唤醒: 农场 ${nextT(jobs.farm)}${jobEnabledUI(a,'daily') ? ' · 每日 ' + nextT(jobs.daily) : ''}${(a.config.pastureLoop||a.config.pioneer) ? ' · 牧场 ' + nextT(jobs.pasture) : ''}${a.config.pastureFeed ? ' · 牧场喂食 ' + nextT(jobs.pasturefeed) : ''}${a.config.petTrain ? ' · 宠物培养 ' + nextT(jobs.pettrain) : ''}${a.config.grabPoints ? ' · 抢积分 ' + nextT(jobs.grab) : ''}${a.config.goldFight ? ' · 圣衣打怪 ' + nextT(jobs.goldfight) : ''}</div>` : ''}
       <div class="meta">上次: ${st.lastRun ? new Date(st.lastRun).toLocaleTimeString() + ' · ' + esc(st.lastResult) : '—'}</div>
       <div class="acts">
         <button class="btn s p" onclick="runNow('${a.id}')">立即执行</button>
@@ -423,7 +425,7 @@ function openCfg(id) {
   $('#cfgOpts').innerHTML = FEATURES.map(([k, n, d]) =>
     `<div class="opt"><div><div class="t">${n}</div><div class="st">${d}</div></div>
      <label class="sw"><input type="checkbox" data-k="${k}" ${a.config[k] ? 'checked' : ''}><i></i></label></div>`).join('');
-  $('#cPoll').value = a.config.farmPollMaxMin; $('#cStealMax').value = a.config.stealMax; $('#cCareMax').value = a.config.careMax; $('#cPastureInt').value = a.config.pastureIntervalMin;
+  $('#cPoll').value = a.config.farmPollMaxMin; $('#cStealMax').value = a.config.stealMax; $('#cCareMax').value = a.config.careMax; $('#cPastureInt').value = a.config.pastureIntervalMin; $('#cPastureFeedInt').value = a.config.pastureFeedIntervalMin ?? 210;
   $('#cPioScene').value = a.config.pioneerScene || 1; $('#cPioAction').value = a.config.pioneerAction || 1;
   const wts = (a.config.petTrainWts && a.config.petTrainWts.length) ? a.config.petTrainWts.map(String) : [String(a.config.petTrainWt || 3)];
   document.querySelectorAll('#cPetTrainWts input').forEach((i) => (i.checked = wts.includes(i.value)));
@@ -444,7 +446,7 @@ function collectCfg() {
   const petTrainWts = [...document.querySelectorAll('#cPetTrainWts input:checked')].map((i) => +i.value);
   if (!petTrainWts.length) petTrainWts.push(3);
   const num = (v, def) => (v === '' || v == null || isNaN(+v) ? def : +v); // 0 是合法值(不限)，不能用 || 兜底(会把0吞成默认值)
-  const config = { farmPollMaxMin: +$('#cPoll').value || 30, sowSeedsId: $('#cSeed').value, stealMax: num($('#cStealMax').value, 10), careMax: num($('#cCareMax').value, 10), pastureIntervalMin: +$('#cPastureInt').value || 120, pioneerScene: +$('#cPioScene').value || 1, pioneerAction: +$('#cPioAction').value || 1, petTrainWts, petTrainWt: petTrainWts[0],
+  const config = { farmPollMaxMin: +$('#cPoll').value || 30, sowSeedsId: $('#cSeed').value, stealMax: num($('#cStealMax').value, 10), careMax: num($('#cCareMax').value, 10), pastureIntervalMin: +$('#cPastureInt').value || 120, pastureFeedIntervalMin: +$('#cPastureFeedInt').value || 210, pioneerScene: +$('#cPioScene').value || 1, pioneerAction: +$('#cPioAction').value || 1, petTrainWts, petTrainWt: petTrainWts[0],
     grabRoom: +$('#cGrabRoom').value || 696, grabHour: +$('#cGrabHour').value || 0, grabMin: +$('#cGrabMin').value || 0, grabWindowMin: +$('#cGrabWin').value || 10, grabPollSec: +$('#cGrabPoll').value || 5,
     goldFightMaxLevel: +$('#cGoldMaxLv').value || 29, goldFightPollMaxMin: +$('#cGoldPoll').value || 5 };
   document.querySelectorAll('#cfgOpts input[data-k]').forEach((i) => (config[i.dataset.k] = i.checked));

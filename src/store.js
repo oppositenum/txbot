@@ -30,6 +30,8 @@ const DEFAULT_CONFIG = {
   // ===== 牧场循环 =====
   pastureLoop: false,    // 定时收获牧场
   pastureIntervalMin: 120,
+  pastureFeed: true,          // 独立喂食循环：不管有没有开pastureLoop，饿了就喂，别让动物"停止成长"
+  pastureFeedIntervalMin: 210, // 喂食间隔(分钟)，默认3.5小时(3-4小时区间)
   pioneer: false,        // 神殿拓荒（定时发起）
   pioneerScene: 1,       // 1野猪林/2九寨沟/3西双版纳
   pioneerAction: 1,      // 1木材/2干草/3石块/4兽骨

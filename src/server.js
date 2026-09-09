@@ -256,7 +256,7 @@ const PLUGIN_ACTIONS = {
     feedAll: (c) => c.feedAll(), disinfectAll: (c) => c.disinfectAll(), cleanAll: (c) => c.cleanAll(),
     fattenAll: (c) => c.fattenAll(), nurseAll: (c) => c.nurseAll(), harvest: (c, p) => c.harvest(p.id),
     feedDog: (c) => c.feedDog(), restock: async (c, p) => { const r = await c.restockAll(p.femaleid || null); return `补栏${r.n}圈舍${r.name ? '×' + r.name : ''}`; },
-    feedAnimals: async (c) => `喂食 ${await c.feedAnimals()} 只`, cleanAnimals: async (c) => `洗澡 ${await c.cleanAnimals()} 只`,
+    feedAnimals: async (c) => { const r = await c.feedAnimals(); return `喂食 ${r.fed} 只${r.bought ? '(食料不足已自动购买开心牧草x50)' : ''}`; }, cleanAnimals: async (c) => `洗澡 ${await c.cleanAnimals()} 只`,
     pioneer: (c, p) => c.pioneer(p.sceneid || 1, p.action || 1) },
   pet: { info: (c) => c.getInfo(), dailyAllowance: (c) => c.dailyAllowance(), attendance: (c) => c.attendance(),
     harvestWork: async (c) => { const n = await c.harvestWork(); return `种花收获 ${n} 处花圃`; }, feed: (c) => c.feed(),

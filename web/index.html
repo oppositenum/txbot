@@ -240,8 +240,8 @@ function overviewLine(st) {
   return parts.length ? `<div class="meta" style="color:var(--acc)">📊 ${parts.join(' · ')}</div>` : '';
 }
 function openBrowser(id) {
-  // 用本地浏览器新标签，经服务端 cookie 注入代理以该账号身份浏览
-  window.open('/b/' + id + '/plugins/farm/cs/index.do', '_blank');
+  // 用本地浏览器新标签，经服务端 cookie 注入代理以该账号身份浏览；默认打开QQ签到页
+  window.open('/b/' + id + '/activity/qq/cs/sign.do', '_blank');
 }
 async function openSettings() {
   try {

@@ -32,6 +32,10 @@ class FarmClient {
   setProxy(proxy) {
     this.proxy = proxy || null;
     this.dispatcher = (proxy && ProxyAgent) ? new ProxyAgent(proxy) : null;
+    // 走代理的请求更容易遇到"代理本身没坏，但被多账号共用同一端口挤爆连接池"这种瞬时抖动
+    // (比直连更容易出现)，所以走代理时超时/重试次数都加大，直连保持原来的快速失败节奏
+    this.timeoutMs = proxy ? 30000 : 15000;
+    this.maxRetries = proxy ? 4 : 2;
   }
 
   // 统一 fetch：自动附带代理 dispatcher + 超时保护
@@ -43,7 +47,7 @@ class FarmClient {
   // fetch()都会正常resolve，不会走进这个重试分支——避免对业务拒绝做无意义的重复请求。
   async _f(url, options = {}) {
     if (this.dispatcher) options = { ...options, dispatcher: this.dispatcher };
-    const maxRetries = this.maxRetries ?? 2; // 最多重试2次(共3次尝试)
+    const maxRetries = this.maxRetries ?? 2; // 直连默认最多重试2次(共3次尝试)，走代理默认4次(共5次)
     let lastErr;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {

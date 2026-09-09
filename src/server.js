@@ -141,6 +141,14 @@ app.post('/api/accounts/:id/relogin', async (req, res) => {
   }
 });
 
+// 留言骚扰待处理清单：body.ids 不传=清空全部命中的，传了就只删这几条
+app.post('/api/accounts/:id/msgwatch/clean', async (req, res) => {
+  try {
+    const r = await sched.cleanMsgPending(req.params.id, req.body && req.body.ids);
+    res.json({ ok: true, ...r });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 app.put('/api/accounts/:id', (req, res) => {
   const acc = store.update(req.params.id, req.body);
   if (!acc) return res.status(404).json({ error: 'not found' });

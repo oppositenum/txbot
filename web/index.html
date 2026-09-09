@@ -481,7 +481,10 @@ function detTab(t) {
 }
 function renderBody() {
   const b = $('#tabBody');
-  if (curTab === 'logs') { b.innerHTML = '<div class="logs" id="logView">加载中…</div>'; refreshLogs(); return; }
+  if (curTab === 'logs') {
+    b.innerHTML = '<div id="msgPendingBox"></div><div class="logs" id="logView">加载中…</div>';
+    renderMsgPending(); refreshLogs(); return;
+  }
   if (curTab === 'farm') return renderFarm();
   return renderPlugin(curTab);
 }
@@ -502,6 +505,37 @@ async function refreshLogs() {
   const logs = await api('/accounts/' + curId + '/logs').catch(() => []);
   el.textContent = logs.slice(-150).map((l) => `${new Date(l.ts).toLocaleTimeString()} ${l.msg}`).join('\n') || '暂无日志';
   el.scrollTop = el.scrollHeight;
+}
+
+// 留言骚扰待处理清单（观察期命中但没自动删的，攒在这里等人工确认清理）
+function renderMsgPending() {
+  const box = $('#msgPendingBox'); if (!box) return;
+  const acc = accounts.find((a) => a.id === curId);
+  const pending = (acc && acc.status.msgPending) || [];
+  if (!pending.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="hint" style="color:var(--warn)">⚠️ 留言骚扰待处理 ${pending.length} 条（观察期未自动删，勾选后手动清理）</div>
+    <div style="max-height:220px;overflow-y:auto;margin:6px 0;border:1px solid var(--line);border-radius:8px;padding:6px">
+      ${pending.map((p) => `<label style="display:flex;gap:6px;align-items:flex-start;padding:4px 0;border-bottom:1px solid var(--line)">
+        <input type="checkbox" class="msgPendChk" value="${p.id}" checked style="margin-top:3px">
+        <span style="font-size:12px;line-height:1.5"><b>${esc(p.from)}(${esc(p.uid)})</b>: ${esc(p.body)}<br><span style="color:var(--dim)">命中: ${esc((p.matched || []).join(','))}</span></span>
+      </label>`).join('')}
+    </div>
+    <div class="sheetacts">
+      <button class="btn s" onclick="doCleanMsgPending(false)">删除勾选</button>
+      <button class="btn s" style="border-color:var(--err);color:var(--err)" onclick="doCleanMsgPending(true)">全部删除(${pending.length})</button>
+    </div>`;
+}
+async function doCleanMsgPending(all) {
+  const ids = all ? undefined : [...document.querySelectorAll('.msgPendChk:checked')].map((i) => +i.value);
+  if (!all && (!ids || !ids.length)) return toast('没有勾选');
+  const n = all ? document.querySelectorAll('.msgPendChk').length : ids.length;
+  if (!confirm(`确定删除这 ${n} 条留言？此操作不可恢复。`)) return;
+  try {
+    const r = await api('/accounts/' + curId + '/msgwatch/clean', { method: 'POST', body: ids ? { ids } : {} });
+    toast(`已删除${r.deleted}条${r.failed ? '，失败' + r.failed + '条' : ''}`);
+    await loadAccounts();
+    renderMsgPending();
+  } catch (e) { toast(e.message); }
 }
 
 // ============ 农场标签 ============

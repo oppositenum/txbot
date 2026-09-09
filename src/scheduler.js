@@ -561,6 +561,8 @@ async function runMsgWatchJob(id, c) {
   let flagged = 0;
   const offenders = new Set(store.getSettings().msgOffenders || []);
   let offendersChanged = false;
+  // 命中但没自动删的，存进待清理列表——不然只写进日志，用户找不到地方批量处理
+  const pending = [...(acc.status.msgPending || [])];
   for (const mid of newIds) {
     let det;
     try { det = await c.getMessageDetail(mid); } catch { continue; }
@@ -573,12 +575,17 @@ async function runMsgWatchJob(id, c) {
       if (!known) { offenders.add(det.uid); offendersChanged = true; }
       if (cfg.msgAutoDelete) {
         try { await c.deleteMessage(mid); log(id, `已删除留言#${mid}`); } catch (e) { log(id, `删除留言#${mid}失败: ${e.message}`); }
+      } else {
+        pending.push({ id: mid, from: det.from, uid: det.uid, body: det.body.slice(0, 100), matched: r.matched, ts: Date.now() });
       }
     }
     await sleep(300 + Math.random() * 300);
   }
   if (offendersChanged) store.setSettings({ msgOffenders: [...offenders] });
-  if (seenMax > lastMax) store.setStatus(id, { msgSeenMaxId: seenMax });
+  const patch = {};
+  if (seenMax > lastMax) patch.msgSeenMaxId = seenMax;
+  if (pending.length !== (acc.status.msgPending || []).length) patch.msgPending = pending;
+  if (Object.keys(patch).length) store.setStatus(id, patch);
   log(id, newIds.length ? `留言巡检: 新增${newIds.length}条，命中${flagged}条` : '留言巡检: 无新留言');
   setJob(id, 'msgwatch', Date.now() + jitter((cfg.msgWatchIntervalMin || 60) * 60000));
 }
@@ -751,4 +758,22 @@ function resume() {
   startLoop();
 }
 
-module.exports = { runCycle, start, stop, resume, resetClient, getClient, relogin, logs, log };
+// 清理"留言骚扰待处理列表"：ids 不传则清空全部；传了就只删这几条，其余留着
+async function cleanMsgPending(id, ids) {
+  const acc = store.get(id);
+  if (!acc) return { deleted: 0, failed: 0 };
+  const pending = acc.status.msgPending || [];
+  const targets = ids && ids.length ? pending.filter((p) => ids.includes(p.id)) : pending;
+  const c = getClient(acc);
+  let deleted = 0, failed = 0;
+  for (const p of targets) {
+    try { await c.deleteMessage(p.id); deleted++; log(id, `已删除留言#${p.id}(来自${p.from})`); }
+    catch (e) { failed++; log(id, `删除留言#${p.id}失败: ${e.message}`); }
+    await sleep(300 + Math.random() * 300);
+  }
+  const targetIds = new Set(targets.map((p) => p.id));
+  store.setStatus(id, { msgPending: pending.filter((p) => !targetIds.has(p.id)) });
+  return { deleted, failed };
+}
+
+module.exports = { runCycle, start, stop, resume, resetClient, getClient, relogin, logs, log, cleanMsgPending };

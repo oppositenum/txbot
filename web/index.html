@@ -373,7 +373,8 @@ function openCfg(id) {
 function collectCfg() {
   const petTrainWts = [...document.querySelectorAll('#cPetTrainWts input:checked')].map((i) => +i.value);
   if (!petTrainWts.length) petTrainWts.push(3);
-  const config = { farmPollMaxMin: +$('#cPoll').value || 30, sowSeedsId: $('#cSeed').value, stealMax: +$('#cStealMax').value || 10, careMax: +$('#cCareMax').value || 10, pastureIntervalMin: +$('#cPastureInt').value || 120, pioneerScene: +$('#cPioScene').value || 1, pioneerAction: +$('#cPioAction').value || 1, petTrainWts, petTrainWt: petTrainWts[0],
+  const num = (v, def) => (v === '' || v == null || isNaN(+v) ? def : +v); // 0 是合法值(不限)，不能用 || 兜底(会把0吞成默认值)
+  const config = { farmPollMaxMin: +$('#cPoll').value || 30, sowSeedsId: $('#cSeed').value, stealMax: num($('#cStealMax').value, 10), careMax: num($('#cCareMax').value, 10), pastureIntervalMin: +$('#cPastureInt').value || 120, pioneerScene: +$('#cPioScene').value || 1, pioneerAction: +$('#cPioAction').value || 1, petTrainWts, petTrainWt: petTrainWts[0],
     grabRoom: +$('#cGrabRoom').value || 696, grabHour: +$('#cGrabHour').value || 0, grabMin: +$('#cGrabMin').value || 0, grabWindowMin: +$('#cGrabWin').value || 10, grabPollSec: +$('#cGrabPoll').value || 5,
     goldFightMaxLevel: +$('#cGoldMaxLv').value || 29, goldFightPollMaxMin: +$('#cGoldPoll').value || 5 };
   document.querySelectorAll('#cfgOpts input[data-k]').forEach((i) => (config[i.dataset.k] = i.checked));

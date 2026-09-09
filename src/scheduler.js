@@ -540,22 +540,22 @@ async function runGrabJob(id) {
 }
 
 // ==================== msgwatch job（好友留言骚扰监测，先只记日志，不自动删）====================
-// 首次巡检(msgSeenMaxId 还没有)会往前翻最多 MAX_BOOTSTRAP_PAGES 页，把历史积压的留言也判一遍；
-// 之后每次只从第1页往前翻，直到翻到的id都 <= 上次记录的最大id 为止（新留言在前，翻到旧的就说明追上了）。
+// 关键机制(实测验证过)：commonReceiveManage.do 这个列表本质是"未读队列"——只要调用过
+// commonReceiveDetail.do?id=X 查看某条，它就会立刻从这个列表永久消失(不是按id/时间排列
+// 不变的历史归档，而是"没看过的"才会出现)。所以完全不需要自己记"扫到哪了"：每次巡检把
+// 当前能翻到的页面都看一遍(=都查看一遍详情)，看过的自然从队列里掉出去，下次巡检看到的
+// 就是这之后新收到的。曾经踩过坑：最初按"消息id是否大于上次记录的最大id"判断是否是新
+// 留言，但由于查看会让列表"塌陷"(后面的老消息会顶上来占据第1页)，旧的id会被误判成
+// "已经处理过"而永远跳过——即使从来没有真正看过/判定过内容。
+const MSG_WATCH_MAX_PAGES = 20; // 一次巡检最多翻的页数(约100条)，积压太多时分多轮巡检慢慢消化，不影响正确性
 async function runMsgWatchJob(id, c) {
   const acc = store.get(id);
   const cfg = acc.config;
-  const lastMax = acc.status.msgSeenMaxId || 0;
-  const maxPages = lastMax ? 10 : 25; // 首次巡检多翻几页把积压的也扫一遍，封顶125条左右
   const newIds = [];
-  let seenMax = lastMax;
-  for (let page = 1; page <= maxPages; page++) {
+  for (let page = 1; page <= MSG_WATCH_MAX_PAGES; page++) {
     const ids = await c.getMessagePage(page);
     if (!ids.length) break;
-    seenMax = Math.max(seenMax, ...ids);
-    const fresh = ids.filter((i) => i > lastMax);
-    newIds.push(...fresh);
-    if (fresh.length < ids.length) break; // 这页里已经出现 <= lastMax 的id，说明追上了，不用再往后翻
+    newIds.push(...ids);
     await sleep(300 + Math.random() * 300);
   }
   let flagged = 0;
@@ -582,11 +582,8 @@ async function runMsgWatchJob(id, c) {
     await sleep(300 + Math.random() * 300);
   }
   if (offendersChanged) store.setSettings({ msgOffenders: [...offenders] });
-  const patch = {};
-  if (seenMax > lastMax) patch.msgSeenMaxId = seenMax;
-  if (pending.length !== (acc.status.msgPending || []).length) patch.msgPending = pending;
-  if (Object.keys(patch).length) store.setStatus(id, patch);
-  log(id, newIds.length ? `留言巡检: 新增${newIds.length}条，命中${flagged}条` : '留言巡检: 无新留言');
+  if (pending.length !== (acc.status.msgPending || []).length) store.setStatus(id, { msgPending: pending });
+  log(id, newIds.length ? `留言巡检: 查看${newIds.length}条，命中${flagged}条` : '留言巡检: 无待查看留言');
   setJob(id, 'msgwatch', Date.now() + jitter((cfg.msgWatchIntervalMin || 60) * 60000));
 }
 

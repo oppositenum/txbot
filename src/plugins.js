@@ -114,17 +114,24 @@ class PastureClient extends FarmClient {
   }
   async getFriendPasture(uid) { return this.req(`index.do?uid=${uid}`); } // 串门（偷）
 
-  // 神殿拓荒：sceneid 1野猪林/2九寨沟/3西双版纳；action 1木材30分/2干草30分/3石块50分/4兽骨10分（免费）
-  // 到点自动掉落战利品；若已在拓荒返回“进行中”
-  async pioneer(sceneid = 1, action = 1) {
+  // 神殿拓荒：sceneid 1野猪林/2九寨沟/3西双版纳；action 1砍伐树木/2清除杂草/3铲除石块/4消灭野兽（免费）
+  // 完成后战利品自动放入库房，不需要额外领取；调用时若已在拓荒中会返回busy=true。
+  // 实测发现游戏页面本身就带精确倒计时"N分钟后XX结束"，比按action猜一个固定时长准得多
+  // (实测账号等级越高实际耗时越长，文档记录的"10分/30分/50分"这类固定值不可靠)，
+  // 所以不管刚发起成功还是撞见忙碌，都用 pioneerStatus() 读一次真实剩余分钟数来精确排期。
+  async pioneer(sceneid = 1, action = 4) {
     const t = strip(await this.req('pioneer.do', { method: 'POST', body: `action=${action}&sceneid=${sceneid}` }));
-    if (/正在.*(消灭|拓荒)|只能同时进行一种/.test(t)) return '拓荒进行中';
-    if (/请选择拓荒类型/.test(t)) return '已发起拓荒(选类型)';
-    const i = t.indexOf('神殿'); return (t.slice(i + 2, i + 60).trim() || '已发起拓荒');
+    if (/正在.*(消灭|拓荒)|只能同时进行一种/.test(t)) return { busy: true, text: '拓荒进行中(上一轮还没结束)' };
+    if (/请选择拓荒类型/.test(t)) return { busy: true, text: '未识别的拓荒类型' };
+    const i = t.indexOf('神殿');
+    return { busy: false, text: (t.slice(i + 2, i + 60).trim() || '已发起拓荒') };
   }
+  // 读取真实剩余分钟数(scene.do 上的"N分钟后XX结束")；忙碌但还没显示倒计时(刚发起的瞬间)时 remainMin 为 null
   async pioneerStatus() {
     const t = strip(await this.req('scene.do'));
-    return /正在.*拓荒|你正在.*消灭/.test(t) ? '进行中' : '空闲';
+    const busy = /正在.*拓荒|你正在.*消灭/.test(t);
+    const m = t.match(/(\d+)\s*分钟后.*?结束/);
+    return { busy, remainMin: m ? +m[1] : null };
   }
 }
 

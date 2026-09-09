@@ -62,8 +62,9 @@ function jobEnabled(acc, type) {
   if (type === 'care') return !!cfg.careFriends;
   if (type === 'farmtask') return !!cfg.farmTasks;
   if (type === 'daily') return !!(cfg.pastureDaily || cfg.petDaily || cfg.goldDaily || cfg.farmSignin || cfg.groupSignin || cfg.qqSignin);
-  if (type === 'pasture') return !!(cfg.pastureLoop || cfg.pioneer);
+  if (type === 'pasture') return !!cfg.pastureLoop;
   if (type === 'pasturefeed') return !!cfg.pastureFeed;
+  if (type === 'pioneer') return !!cfg.pioneer;
   if (type === 'pettrain') return !!cfg.petTrain;
   if (type === 'grab') return !!cfg.grabPoints;
   if (type === 'goldfight') return !!cfg.goldFight;
@@ -434,18 +435,28 @@ async function runPastureJob(id, c) {
     matureMin = info.nextMatureMin;
     store.setStatus(id, { pastureInfo: { harvestable: info.harvestable.length, idle: info.idleCorrals.length, needFeed: info.needFeed, nextMatureAt: matureMin != null ? Date.now() + matureMin * 60000 : null } });
   }
-  let pio = '';
-  if (cfg.pioneer) { pio = await p.pioneer(cfg.pioneerScene || 1, cfg.pioneerAction || 1); }
   // 唤醒：按最近动物成熟时间，封顶 pastureIntervalMin；喂食后一般十几分钟就发情/成熟
   const cap = (cfg.pastureIntervalMin || 120) * 60000;
   let delay = matureMin != null ? Math.min(matureMin * 60000, cap) : cap;
   if (delay < 60000) delay = 60000;
   const next = Date.now() + jitter(delay);
   setJob(id, 'pasture', next);
-  const parts = [];
-  if (cfg.pastureLoop) parts.push(`收获${n} 喂食${fed} 洗澡${washed} 补栏${rs.n}${rs.name ? '×' + rs.name : ''}`);
-  if (pio) parts.push('拓荒:' + pio);
-  if (parts.length) log(id, `牧场 ${parts.join(' / ')}；下次 ${new Date(next).toLocaleTimeString()}${matureMin != null ? `(约${matureMin}分钟后)` : ''}`);
+  if (cfg.pastureLoop) log(id, `牧场 收获${n} 喂食${fed} 洗澡${washed} 补栏${rs.n}${rs.name ? '×' + rs.name : ''}；下次 ${new Date(next).toLocaleTimeString()}${matureMin != null ? `(约${matureMin}分钟后)` : ''}`);
+}
+
+// ==================== 神殿拓荒 job（完成后奖励自动放入库房，独立循环，一轮结束立刻发起下一轮）====================
+async function runPioneerJob(id, c) {
+  const acc = store.get(id);
+  const cfg = acc.config;
+  const p = new PastureClient(c.jar, { proxy: acc.proxy });
+  const r = await p.pioneer(cfg.pioneerScene || 1, cfg.pioneerAction || 4);
+  // 不管刚发起成功还是撞见"上一轮还没结束"，都读一次 scene.do 上真实的倒计时来精确排期——
+  // 实测按 action 猜固定时长(文档写的10/30/50分)不准(账号等级越高实际耗时越长)，
+  // 读不到倒计时(格式没匹配上/瞬间状态)才兜底5分钟后再查
+  const st = await p.pioneerStatus();
+  const delayMin = st.remainMin != null ? st.remainMin + 1 : 5;
+  log(id, `拓荒: ${r.text}${st.remainMin != null ? `(约${st.remainMin}分钟后完成)` : ''}；下次 ${new Date(Date.now() + delayMin * 60000).toLocaleTimeString()}`);
+  setJob(id, 'pioneer', Date.now() + jitter(delayMin * 60000));
 }
 
 // ==================== 牧场独立喂食 job（不依赖 pastureLoop/pastureDaily，按固定间隔巡检）====================
@@ -608,6 +619,7 @@ async function runJob(id, type, retried = false) {
       else if (type === 'daily') await runDailyJob(id, c);
       else if (type === 'pasture') await runPastureJob(id, c);
       else if (type === 'pasturefeed') await runPastureFeedJob(id, c);
+      else if (type === 'pioneer') await runPioneerJob(id, c);
       else if (type === 'pettrain') await runPetTrainJob(id, c);
       else if (type === 'grab') await runGrabJob(id);
       else if (type === 'goldfight') await runGoldFightJob(id);
@@ -662,7 +674,7 @@ function tick() {
     if (!acc.config.enabled || acc.status.needLogin) continue;
     const jobs = acc.status.jobs || {};
     let dirty = false;
-    for (const type of ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pasturefeed', 'pettrain', 'grab', 'goldfight', 'msgwatch']) {
+    for (const type of ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pasturefeed', 'pioneer', 'pettrain', 'grab', 'goldfight', 'msgwatch']) {
       if (!jobEnabled(acc, type)) continue;
       if (running.has(`${acc.id}:${type}`)) continue; // 该账号该任务已在跑（同账号不同任务可并行）
       let nr = jobs[type];
@@ -705,7 +717,8 @@ function start(id) {
   const jobs = {};
   jobs.farm = Date.now() + Math.random() * 30000; // 错峰启动
   jobs.daily = computeDailyNext(acc);
-  if (acc.config.pastureLoop || acc.config.pioneer) jobs.pasture = Date.now() + Math.random() * 60000;
+  if (acc.config.pastureLoop) jobs.pasture = Date.now() + Math.random() * 60000;
+  if (acc.config.pioneer) jobs.pioneer = Date.now() + Math.random() * 60000;
   if (acc.config.petTrain) jobs.pettrain = Date.now() + Math.random() * 30000;
   if (acc.config.grabPoints) jobs.grab = computeGrabNext(acc.config, acc);
   if (acc.config.goldFight) jobs.goldfight = Date.now() + Math.random() * 30000;
@@ -746,7 +759,8 @@ function resume() {
     const jobs = acc.status.jobs || {};
     if (jobs.farm == null) jobs.farm = Date.now() + Math.random() * 30000;
     if (jobs.daily == null) jobs.daily = computeDailyNext(acc);
-    if ((acc.config.pastureLoop || acc.config.pioneer) && jobs.pasture == null) jobs.pasture = Date.now() + Math.random() * 60000;
+    if (acc.config.pastureLoop && jobs.pasture == null) jobs.pasture = Date.now() + Math.random() * 60000;
+    if (acc.config.pioneer && jobs.pioneer == null) jobs.pioneer = Date.now() + Math.random() * 60000;
     if (acc.config.petTrain && jobs.pettrain == null) jobs.pettrain = Date.now() + Math.random() * 30000;
     if (acc.config.grabPoints && jobs.grab == null) jobs.grab = computeGrabNext(acc.config, acc);
     if (acc.config.goldFight && jobs.goldfight == null) jobs.goldfight = Date.now() + Math.random() * 30000;

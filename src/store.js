@@ -33,9 +33,9 @@ const DEFAULT_CONFIG = {
   pastureIntervalMin: 120,
   pastureFeed: true,          // 独立喂食循环：不管有没有开pastureLoop，饿了就喂，别让动物"停止成长"
   pastureFeedIntervalMin: 210, // 喂食间隔(分钟)，默认3.5小时(3-4小时区间)
-  pioneer: false,        // 神殿拓荒（定时发起）
+  pioneer: false,        // 神殿拓荒：完成后奖励自动放入库房，独立循环——一轮结束立刻发起下一轮
   pioneerScene: 1,       // 1野猪林/2九寨沟/3西双版纳
-  pioneerAction: 1,      // 1木材/2干草/3石块/4兽骨
+  pioneerAction: 4,      // 1砍伐树木/2清除杂草/3铲除石块/4消灭野兽(默认，耗时最短)；实际耗时按账号读到的倒计时精确排期
   // ===== 宠物培养循环 =====
   petTrain: false,       // 定时培养
   petTrainWt: 3,         // 兼容旧字段：主属性 3智慧/2斗志/1气质/4体贴

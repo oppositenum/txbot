@@ -29,6 +29,19 @@ app.post('/api/apply-config-all', (req, res) => {
   res.json({ ok: true, applied: n });
 });
 
+// ---- 代理管理：保存的代理列表 + 批量分配给勾选的账号 ----
+app.get('/api/proxies', (req, res) => res.json(store.getSettings().proxies || []));
+app.put('/api/proxies', (req, res) => {
+  const proxies = Array.isArray(req.body) ? req.body : (req.body.proxies || []);
+  res.json(store.setSettings({ proxies }).proxies);
+});
+app.post('/api/apply-proxy', (req, res) => {
+  const { proxy, accountIds } = req.body || {};
+  const n = store.applyProxyToAccounts(proxy, accountIds);
+  (accountIds || []).forEach((id) => sched.resetClient(id));
+  res.json({ ok: true, applied: n });
+});
+
 // ---- 账号管理 ----
 app.get('/api/accounts', (req, res) => res.json(store.list().map(pub)));
 

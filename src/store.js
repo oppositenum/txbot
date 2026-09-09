@@ -60,6 +60,7 @@ const DEFAULT_SETTINGS = {
                          // 独立于 maxConcurrent，故意设更小——签到类操作是风控重点盯防的
                          // 行为模式，多账号同时刷容易被识别成"批量刷"，串行更安全
   stealWhitelist: [],    // 全局偷菜白名单 uid（遇到这些用户不偷）
+  proxies: [],           // 已保存的代理列表 [{label, url}]，供"代理管理"批量勾选账号分配用
 };
 
 function load() {
@@ -118,6 +119,16 @@ module.exports = {
     db.accounts.forEach((a) => Object.assign(a.config, patch));
     save(db);
     return db.accounts.length;
+  },
+  // 把某个代理批量分配给勾选的账号（url 传空字符串='' 表示清除代理，改回直连）
+  applyProxyToAccounts(url, ids) {
+    const set = new Set(ids || []);
+    let n = 0;
+    for (const a of db.accounts) {
+      if (set.has(a.id)) { a.proxy = url || null; n++; }
+    }
+    save(db);
+    return n;
   },
   add({ name, cookie, useruid, password, proxy, config }) {
     const id = 'a' + (Math.max(0, ...db.accounts.map((a) => +a.id.slice(1))) + 1);

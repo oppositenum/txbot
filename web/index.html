@@ -73,6 +73,7 @@ main{max-width:640px;margin:0 auto;padding:16px}
 <header>
   <h1>tx<span>bot</span> · 农场托管</h1>
   <div style="display:flex;gap:8px">
+    <button class="btn s" onclick="openProxyMgr()">代理</button>
     <button class="btn s" onclick="openSettings()">设置</button>
     <button class="btn s" onclick="loadAccounts()">刷新</button>
   </div>
@@ -167,6 +168,21 @@ main{max-width:640px;margin:0 auto;padding:16px}
   <div id="tabBody"></div>
 </div></div>
 
+<!-- 代理管理 -->
+<div class="mask" id="mProxy"><div class="sheet">
+  <h2>代理管理</h2>
+  <div class="f"><label>新增代理</label>
+    <div style="display:flex;gap:6px">
+      <input type="text" id="pxLabel" placeholder="备注(可选)" style="width:30%">
+      <input type="text" id="pxUrl" placeholder="http://[user:pass@]host:port" style="flex:1">
+    </div>
+    <button class="btn s" style="margin-top:6px;width:100%" onclick="addProxy()">添加到列表</button>
+  </div>
+  <div id="proxyList"></div>
+  <div class="hint">每个代理下面勾选要用它的账号，点"应用到勾选账号"批量切换（未勾的账号不受影响）；要把账号改回直连，用最上面的"（清除代理·直连）"分组勾选后应用。</div>
+  <div class="sheetacts"><button class="btn" onclick="hide('mProxy')">关闭</button></div>
+</div></div>
+
 <!-- 签到 -->
 <div class="mask" id="mSign"><div class="sheet">
   <h2>每日签到</h2>
@@ -242,6 +258,60 @@ function overviewLine(st) {
 function openBrowser(id) {
   // 用本地浏览器新标签，经服务端 cookie 注入代理以该账号身份浏览；默认打开QQ签到页
   window.open('/b/' + id + '/activity/qq/cs/sign.do', '_blank');
+}
+async function openProxyMgr() {
+  show('mProxy');
+  await renderProxyList();
+}
+async function renderProxyList() {
+  const box = $('#proxyList');
+  box.innerHTML = '<div class="hint">加载中…</div>';
+  try {
+    const [proxies, accs] = await Promise.all([api('/proxies'), api('/accounts')]);
+    const rows = [{ label: '（清除代理·直连）', url: '' }, ...proxies];
+    box.innerHTML = rows.map((p) => {
+      const checks = accs.map((a) => {
+        const cur = a.proxy || '';
+        return `<label class="subtab" style="display:flex;align-items:center;gap:4px"><input type="checkbox" value="${a.id}" ${cur === p.url ? 'checked' : ''}>${esc(a.name)}</label>`;
+      }).join('');
+      return `<div class="li" style="flex-direction:column;align-items:stretch">
+        <div class="row"><div class="n">${esc(p.label || p.url || '直连')}${p.url ? `<div class="meta">${esc(p.url)}</div>` : ''}</div>
+          ${p.url ? `<div class="r"><button class="btn s" style="color:var(--err)" onclick="delProxy('${esc(p.url).replace(/'/g, "\\'")}')">删除</button></div>` : ''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0">${checks || '<div class="hint">暂无账号</div>'}</div>
+        <button class="btn p s" onclick="applyProxySel(this,'${esc(p.url).replace(/'/g, "\\'")}')">应用到勾选账号</button>
+      </div>`;
+    }).join('');
+  } catch (e) { box.innerHTML = `<div class="hint" style="color:var(--err)">加载失败: ${esc(e.message)}</div>`; }
+}
+async function addProxy() {
+  const label = $('#pxLabel').value.trim(), url = $('#pxUrl').value.trim();
+  if (!url) return toast('请填代理地址');
+  try {
+    const proxies = await api('/proxies');
+    if (proxies.some((p) => p.url === url)) return toast('该代理已存在');
+    proxies.push({ label, url });
+    await api('/proxies', { method: 'PUT', body: { proxies } });
+    $('#pxLabel').value = ''; $('#pxUrl').value = '';
+    toast('已添加'); renderProxyList();
+  } catch (e) { toast(e.message); }
+}
+async function delProxy(url) {
+  if (!confirm('删除该代理配置？(不影响已经在用它的账号，只是从列表移除)')) return;
+  try {
+    const proxies = (await api('/proxies')).filter((p) => p.url !== url);
+    await api('/proxies', { method: 'PUT', body: { proxies } });
+    renderProxyList();
+  } catch (e) { toast(e.message); }
+}
+async function applyProxySel(btn, url) {
+  const box = btn.closest('.li');
+  const ids = [...box.querySelectorAll('input[type=checkbox]:checked')].map((i) => i.value);
+  if (!ids.length) return toast('没有勾选账号');
+  try {
+    const r = await api('/apply-proxy', { method: 'POST', body: { proxy: url, accountIds: ids } });
+    toast(`已应用到${r.applied}个账号`);
+    renderProxyList(); loadAccounts();
+  } catch (e) { toast(e.message); }
 }
 async function openSettings() {
   try {

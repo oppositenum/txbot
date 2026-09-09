@@ -1,13 +1,51 @@
 // 管理后端：REST API + H5 静态页
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const store = require('./store');
 const sched = require('./scheduler');
 const { FarmClient } = require('./client');
 const { PastureClient, PetClient, GoldClient } = require('./plugins');
 const { baseDir } = require('./paths');
 
+// 轻量读取 .env（跟可执行文件/项目根同一目录），不引入 dotenv 依赖；
+// 已存在的真实环境变量优先，.env 只补没设置过的——方便每次重启不用手动带 TXBOT_USER/PASS
+try {
+  const envPath = path.join(baseDir, '.env');
+  if (fs.existsSync(envPath)) {
+    for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  }
+} catch { /* .env 可选，读取失败不影响启动 */ }
+
 const app = express();
+
+// 简单登录保护：设置 TXBOT_USER / TXBOT_PASS 环境变量后，整个管理面板(含静态页/API/
+// 反向代理浏览)都需要 HTTP Basic Auth 才能访问——不然局域网/公网上任何能连到这个端口
+// 的人都能直接看到并操作所有托管账号。不设置这两个变量则维持原样不加认证(方便本地调试)。
+const AUTH_USER = process.env.TXBOT_USER;
+const AUTH_PASS = process.env.TXBOT_PASS;
+if (AUTH_USER && AUTH_PASS) {
+  const crypto = require('crypto');
+  const safeEqual = (a, b) => {
+    const ba = Buffer.from(a), bb = Buffer.from(b);
+    return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+  };
+  app.use((req, res, next) => {
+    const [scheme, encoded] = (req.headers.authorization || '').split(' ');
+    if (scheme === 'Basic' && encoded) {
+      const [u, p] = Buffer.from(encoded, 'base64').toString().split(':');
+      if (u != null && p != null && safeEqual(u, AUTH_USER) && safeEqual(p, AUTH_PASS)) return next();
+    }
+    res.set('WWW-Authenticate', 'Basic realm="txbot"');
+    res.status(401).send('需要登录');
+  });
+} else {
+  console.log('⚠️  未设置 TXBOT_USER / TXBOT_PASS 环境变量，管理面板当前没有登录保护，任何能访问这个端口的人都能直接操作账号！建议设置后重启，详见 README。');
+}
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(baseDir, 'web')));
 

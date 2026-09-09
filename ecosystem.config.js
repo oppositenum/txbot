@@ -16,6 +16,9 @@ module.exports = {
       env: {
         PORT: 8787,
         HOST: '0.0.0.0',
+        // 想开启登录保护(强烈建议)就取消注释并填自己的账号密码：
+        // TXBOT_USER: 'admin',
+        // TXBOT_PASS: '换成你自己的密码',
       },
     },
   ],

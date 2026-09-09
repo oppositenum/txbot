@@ -32,6 +32,17 @@ PORT=9000 npm start          # Linux/macOS
 set PORT=9000&& npm start     # Windows cmd
 ```
 
+## 登录保护
+
+默认**不带任何认证**——只要能连到这个端口，任何人打开网页就能看到并操作你托管的全部账号。局域网内使用、或者对外网开放前，强烈建议设置 `TXBOT_USER` / `TXBOT_PASS` 两个环境变量开启 HTTP Basic Auth（浏览器会弹出系统自带的登录框）：
+
+```bash
+TXBOT_USER=admin TXBOT_PASS=你的密码 npm start          # Linux/macOS
+set TXBOT_USER=admin&& set TXBOT_PASS=你的密码&& npm start # Windows cmd
+```
+
+不设置这两个变量时终端会打印一行警告提醒当前没有登录保护。PM2/systemd/launchd 等常驻方式下，把这两个变量写进对应配置的环境变量里即可（`ecosystem.config.js` 的 `env` 字段、systemd 的 `Environment=`、launchd 的 `EnvironmentVariables`）。
+
 ## 后台常驻 / 开机自启
 
 推荐 **PM2**（跨三平台统一方案）：

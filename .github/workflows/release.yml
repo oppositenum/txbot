@@ -1,0 +1,131 @@
+name: Build & Release Binaries
+
+# 打 v* tag 自动构建；也支持手动对已存在的 tag 补跑(不用新建 tag 就能把二进制包传上去)
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布二进制包的已存在 tag（例如 v1.0.0）'
+        required: true
+
+env:
+  SEA_FUSE: NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+  POSTJECT_VERSION: 1.0.0-alpha.6
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x64
+          - os: macos-latest
+            platform: macos-arm64
+          - os: macos-13
+            platform: macos-x64
+          - os: windows-latest
+            platform: windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bundle into single file
+        run: npm run build:sea
+
+      - name: Generate SEA blob
+        run: node --experimental-sea-config sea-config.json
+
+      # ---- Linux ----
+      - name: Build executable (Linux)
+        if: matrix.platform == 'linux-x64'
+        shell: bash
+        run: |
+          cp "$(command -v node)" ./txbot
+          npx --yes postject@${{ env.POSTJECT_VERSION }} ./txbot NODE_SEA_BLOB dist/sea-prep.blob \
+            --sentinel-fuse ${{ env.SEA_FUSE }}
+          chmod +x ./txbot
+
+      # ---- macOS(arm64/x64 共用，需要先去签名再注入，最后 ad-hoc 重新签名) ----
+      - name: Build executable (macOS)
+        if: contains(matrix.platform, 'macos')
+        shell: bash
+        run: |
+          cp "$(command -v node)" ./txbot
+          codesign --remove-signature ./txbot
+          npx --yes postject@${{ env.POSTJECT_VERSION }} ./txbot NODE_SEA_BLOB dist/sea-prep.blob \
+            --sentinel-fuse ${{ env.SEA_FUSE }} \
+            --macho-segment-name NODE_SEA
+          codesign --sign - ./txbot
+          chmod +x ./txbot
+
+      # ---- Windows ----
+      - name: Build executable (Windows)
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        run: |
+          node -e "require('fs').copyFileSync(process.execPath, 'txbot.exe')"
+          npx --yes postject@${{ env.POSTJECT_VERSION }} txbot.exe NODE_SEA_BLOB dist/sea-prep.blob `
+            --sentinel-fuse ${{ env.SEA_FUSE }}
+
+      # ---- 打包(Unix: tar.gz，Windows: zip)，都带上 web/ 静态资源 + README ----
+      - name: Package (Unix)
+        if: matrix.platform != 'windows-x64'
+        shell: bash
+        run: |
+          dir="txbot-${{ matrix.platform }}"
+          mkdir -p "$dir"
+          cp txbot "$dir/"
+          cp -R web "$dir/web"
+          cp README.md "$dir/"
+          tar -czf "txbot-${{ matrix.platform }}.tar.gz" "$dir"
+
+      - name: Package (Windows)
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        run: |
+          $dir = "txbot-${{ matrix.platform }}"
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          Copy-Item txbot.exe "$dir/"
+          Copy-Item -Recurse web "$dir/web"
+          Copy-Item README.md "$dir/"
+          Compress-Archive -Path $dir -DestinationPath "txbot-${{ matrix.platform }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: txbot-${{ matrix.platform }}
+          path: |
+            txbot-${{ matrix.platform }}.tar.gz
+            txbot-${{ matrix.platform }}.zip
+          if-no-files-found: ignore
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: artifacts/*/*
+          fail_on_unmatched_files: true

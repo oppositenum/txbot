@@ -5,10 +5,11 @@ const store = require('./store');
 const sched = require('./scheduler');
 const { FarmClient } = require('./client');
 const { PastureClient, PetClient, GoldClient } = require('./plugins');
+const { baseDir } = require('./paths');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, '..', 'web')));
+app.use(express.static(path.join(baseDir, 'web')));
 
 const pub = (a) => ({ id: a.id, name: a.name, config: a.config, status: a.status, hasCookie: !!a.cookie, hasCreds: !!(a.useruid && a.password), useruid: a.useruid || null, proxy: a.proxy || null });
 

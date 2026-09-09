@@ -1,8 +1,9 @@
 // 账号 + 全局设置持久化 data/accounts.json
 const fs = require('fs');
 const path = require('path');
+const { baseDir } = require('./paths');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const DATA_DIR = path.join(baseDir, 'data');
 const FILE = path.join(DATA_DIR, 'accounts.json');
 
 const DEFAULT_CONFIG = {

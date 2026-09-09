@@ -102,14 +102,15 @@ app.all(/^\/b\/([^/]+)\/(.*)$/, express.raw({ type: () => true, limit: '5mb' }),
       redirect: 'manual',
       ...(req.method !== 'GET' && req.method !== 'HEAD' && req.body && req.body.length ? { body: req.body } : {}),
     };
-    if (c.dispatcher) opts.dispatcher = c.dispatcher;
-    let r = await fetch(target, opts);
+    // 复用 FarmClient._f()（自带按代理调整的超时+重试），而不是裸 fetch——
+    // 之前这里裸 fetch 没有任何超时/重试兜底，账号挂了代理时代理端口一抖动就直接 502
+    let r = await c._f(target, opts);
     c.absorbSetCookie(r);
     // 跟随重定向（保持 cookie，改写回代理域）
     for (let i = 0; i < 5 && r.status >= 300 && r.status < 400; i++) {
       let loc = r.headers.get('location'); if (!loc) break;
       loc = (loc.startsWith('/') ? 'https://tx.com.cn' + loc : loc).replace(/^http:/, 'https:');
-      if (/^https:\/\/tx\.com\.cn\//.test(loc)) { r = await fetch(loc, { headers: opts.headers, redirect: 'manual', ...(c.dispatcher ? { dispatcher: c.dispatcher } : {}) }); c.absorbSetCookie(r); }
+      if (/^https:\/\/tx\.com\.cn\//.test(loc)) { r = await c._f(loc, { headers: opts.headers, redirect: 'manual' }); c.absorbSetCookie(r); }
       else { return res.redirect(loc); }
     }
     const ct = r.headers.get('content-type') || '';
@@ -312,7 +313,7 @@ app.get('/api/accounts/:id/signin', async (req, res) => {
 app.get('/api/accounts/:id/captcha-img', async (req, res) => {
   try {
     const c = sched.getClient(store.get(req.params.id));
-    const r = await fetch(req.query.url, { headers: { Cookie: c.cookieHeader(), 'User-Agent': 'Mozilla/5.0', Referer: 'https://tx.com.cn/plugins/farm/cs/verification.do' } });
+    const r = await c._f(req.query.url, { headers: { Cookie: c.cookieHeader(), 'User-Agent': 'Mozilla/5.0', Referer: 'https://tx.com.cn/plugins/farm/cs/verification.do' } });
     res.set('Content-Type', r.headers.get('content-type') || 'image/jpeg');
     res.send(Buffer.from(await r.arrayBuffer()));
   } catch (e) { res.status(500).end(); }

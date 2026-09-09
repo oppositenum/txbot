@@ -2,8 +2,8 @@
 const BASE = 'https://tx.com.cn/plugins/farm/cs/';
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
 
-let ProxyAgent = null;
-try { ({ ProxyAgent } = require('undici')); } catch { /* undici 不可用则代理功能禁用 */ }
+let ProxyAgent = null, undiciFetch = null;
+try { ({ ProxyAgent, fetch: undiciFetch } = require('undici')); } catch { /* undici 不可用则代理功能禁用 */ }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const strip = (h) =>
@@ -46,12 +46,18 @@ class FarmClient {
   // HTTP响应本身(哪怕4xx/5xx，或页面里写着"等级不够"/"体力不足"这类业务拒绝)
   // fetch()都会正常resolve，不会走进这个重试分支——避免对业务拒绝做无意义的重复请求。
   async _f(url, options = {}) {
+    // 走代理时必须用 undici 自己的 fetch，不能用 Node 全局 fetch：
+    // Node 内置全局 fetch 由 Node 自带的 undici 版本支撑，跟 node_modules 里单独装的 undici
+    // 包(ProxyAgent 从这里 new 出来)版本一旦不一致，dispatcher 内部请求处理器接口对不上，
+    // 每次都会 100% 报 "fetch failed"(cause: invalid onRequestStart method)——不是代理本身
+    // 的问题，用 curl -x 测代理连通性完全正常也测不出这个坑，只有实际跑起来才会炸。
+    const doFetch = this.dispatcher && undiciFetch ? undiciFetch : fetch;
     if (this.dispatcher) options = { ...options, dispatcher: this.dispatcher };
     const maxRetries = this.maxRetries ?? 2; // 直连默认最多重试2次(共3次尝试)，走代理默认4次(共5次)
     let lastErr;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        return await fetch(url, { signal: AbortSignal.timeout(this.timeoutMs || 15000), ...options });
+        return await doFetch(url, { signal: AbortSignal.timeout(this.timeoutMs || 15000), ...options });
       } catch (e) {
         lastErr = e;
         if (attempt < maxRetries) await sleep(500 * (attempt + 1) + Math.random() * 300); // 递增退避

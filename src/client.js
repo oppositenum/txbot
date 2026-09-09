@@ -370,10 +370,12 @@ class FarmClient {
     return [...new Set([...html.matchAll(/commonReceiveDetail\.do\?id=(\d+)/g)].map((m) => +m[1]))];
   }
   // 读取单条留言详情：发件人昵称/uid + 正文
+  // 时间戳有两种格式：近期是"[MM-DD HH:MM:SS]"，超过一年的老留言是"[YYYY-MM-DD HH:MM:SS]"，
+  // 两种都要匹配，否则老留言会因为匹配不到而把后面的"删除 保存 转发"等页面文字也当成正文
   async getMessageDetail(id) {
     const html = await this.req(`https://tx.com.cn/im/cs/commonReceiveDetail.do?id=${id}`);
     const t = strip(html);
-    const m = t.match(/阅读消息\s*来自[:：]\s*([^\(]+)\((\d+)\)\s*([\s\S]*?)\s*\[\d\d-\d\d/);
+    const m = t.match(/阅读消息\s*来自[:：]\s*([^\(]+)\((\d+)\)\s*([\s\S]*?)\s*\[(?:\d{4}-)?\d\d-\d\d/);
     return { id, from: m ? m[1].trim() : null, uid: m ? m[2] : null, body: m ? m[3].trim() : '' };
   }
   // 删除单条留言(详情页"删除"链接，比列表页的批量接口简单——不需要凑 RIDS/checkbox 顺序)

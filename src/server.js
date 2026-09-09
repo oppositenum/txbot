@@ -106,18 +106,22 @@ app.all(/^\/b\/([^/]+)\/(.*)$/, express.raw({ type: () => true, limit: '5mb' }),
     // 之前这里裸 fetch 没有任何超时/重试兜底，账号挂了代理时代理端口一抖动就直接 502
     let r = await c._f(target, opts);
     c.absorbSetCookie(r);
+    let curPath = rest; // 用来算 <base> 目录的"当前页路径"，必须跟着重定向走，不能停在最初请求的路径
     // 跟随重定向（保持 cookie，改写回代理域）
     for (let i = 0; i < 5 && r.status >= 300 && r.status < 400; i++) {
       let loc = r.headers.get('location'); if (!loc) break;
       loc = (loc.startsWith('/') ? 'https://tx.com.cn' + loc : loc).replace(/^http:/, 'https:');
-      if (/^https:\/\/tx\.com\.cn\//.test(loc)) { r = await c._f(loc, { headers: opts.headers, redirect: 'manual' }); c.absorbSetCookie(r); }
+      if (/^https:\/\/tx\.com\.cn\//.test(loc)) {
+        curPath = loc.replace(/^https:\/\/tx\.com\.cn\//, '').replace(/\?.*/, '');
+        r = await c._f(loc, { headers: opts.headers, redirect: 'manual' }); c.absorbSetCookie(r);
+      }
       else { return res.redirect(loc); }
     }
     const ct = r.headers.get('content-type') || '';
     if (/text\/html/i.test(ct)) {
       const html = await r.text();
       res.set('Content-Type', 'text/html; charset=utf-8');
-      return res.send(rewriteHtml(html, id, rest));
+      return res.send(rewriteHtml(html, id, curPath));
     }
     res.set('Content-Type', ct);
     return res.send(Buffer.from(await r.arrayBuffer()));

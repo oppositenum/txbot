@@ -6,6 +6,7 @@ const { PastureClient, PetClient, GoldClient } = require('./plugins');
 const { farmSignin, groupSignin, qqSignin } = require('./signin');
 const msgFilter = require('./msgFilter');
 const store = require('./store');
+const { createGrabScheduler } = require('./grab-scheduler');
 
 const { DAILY_KEYS, todayStr, classifyResult, isBlocked, isSettled } = require('./daily-result');
 
@@ -527,41 +528,8 @@ async function runPetTrainJob(id, c) {
   setJob(id, 'pettrain', next);
 }
 
-// ==================== 聊天室抢积分 job（每天一次突发轮询）====================
-// acc 可选：今天没抢过且已过设定点则尽快补抢，否则排明天
-function computeGrabNext(cfg, acc) {
-  const now = new Date();
-  const start = new Date(now); start.setHours(cfg.grabHour || 12, cfg.grabMin || 0, 0, 0);
-  if (now < start) return start.getTime() + Math.random() * 60000;    // 今天还没到
-  if (!acc || acc.status.lastGrab !== todayStr()) return Date.now() + Math.random() * 120000; // 今天没抢 → 2分钟内补抢
-  return start.getTime() + 86400000 + Math.random() * 60000;          // 今天已抢 → 明天
-}
-async function runGrabJob(id) {
-  const acc = store.get(id);
-  const cfg = acc.config;
-  if (acc.status.lastGrab === todayStr()) { setJob(id, 'grab', computeGrabNext(cfg, acc)); return; }
-  // 专用快速客户端（不与农场共享，抢卡要频繁）
-  const gc = new FarmClient(acc.cookie, { proxy: acc.proxy });
-  gc.minGap = 400;
-  const room = cfg.grabRoom || 696;
-  const endAt = Date.now() + (cfg.grabWindowMin || 10) * 60000;
-  const pollMs = Math.max(1000, (cfg.grabPollSec || 3) * 1000);
-  let grabbed = 0, full = false, rounds = 0, lastLog = 0;
-  log(id, `开始抢积分(房间${room})，轮询${cfg.grabWindowMin || 10}分钟(每${pollMs / 1000}秒)…`);
-  while (Date.now() < endAt) {
-    rounds++;
-    try {
-      const r = await gc.grabRoomCards(room);
-      if (r.found) { grabbed += r.found; log(id, `🎯抢卡: ${r.results.join(' / ') || r.found + '张'}`); }
-      if (r.full) { full = true; log(id, '积分已抢满，停止'); break; }
-    } catch (e) { if (e.code === 'NOT_LOGGED_IN') { log(id, '抢积分:Cookie失效，终止本轮'); break; } }
-    if (Date.now() - lastLog > 60000) { log(id, `抢积分轮询中…已${rounds}轮`); lastLog = Date.now(); } // 每分钟报活
-    await sleep(pollMs);
-  }
-  store.setStatus(id, { lastGrab: todayStr() });
-  setJob(id, 'grab', computeGrabNext(cfg, acc));
-  log(id, `抢积分结束：${rounds}轮，抢到${grabbed}次${full ? '(已满)' : ''}；下次 ${new Date(store.get(id).status.jobs.grab).toLocaleString()}`);
-}
+// 抢积分使用独立轮询器，不占普通任务并发槽。
+const grabScheduler = createGrabScheduler({ store, log, getClient, relogin });
 
 // ==================== msgwatch job（好友留言骚扰监测，先只记日志，不自动删）====================
 // 关键机制(实测验证过)：commonReceiveManage.do 这个列表本质是"未读队列"——只要调用过
@@ -634,7 +602,6 @@ async function runJob(id, type, retried = false) {
       else if (type === 'pasturefeed') await runPastureFeedJob(id, c);
       else if (type === 'pioneer') await runPioneerJob(id, c);
       else if (type === 'pettrain') await runPetTrainJob(id, c);
-      else if (type === 'grab') await runGrabJob(id);
       else if (type === 'goldfight') await runGoldFightJob(id);
       else if (type === 'msgwatch') await runMsgWatchJob(id, c);
     })();
@@ -687,13 +654,13 @@ function tick() {
     if (!acc.config.enabled || acc.status.needLogin) continue;
     const jobs = acc.status.jobs || {};
     let dirty = false;
-    for (const type of ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pasturefeed', 'pioneer', 'pettrain', 'grab', 'goldfight', 'msgwatch']) {
+    for (const type of ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pasturefeed', 'pioneer', 'pettrain', 'goldfight', 'msgwatch']) {
       if (!jobEnabled(acc, type)) continue;
       if (running.has(`${acc.id}:${type}`)) continue; // 该账号该任务已在跑（同账号不同任务可并行）
       let nr = jobs[type];
-      // 定时类(daily/grab)未排期时按设定时间初始化，不立即执行
-      if (nr == null && (type === 'daily' || type === 'grab')) {
-        jobs[type] = nr = type === 'daily' ? computeDailyNext(acc) : computeGrabNext(acc.config, acc);
+      // 每日任务未排期时按设定时间初始化，不立即执行
+      if (nr == null && type === 'daily') {
+        jobs[type] = nr = computeDailyNext(acc);
         dirty = true;
         continue;
       }
@@ -716,6 +683,7 @@ function tick() {
 }
 
 function startLoop() {
+  grabScheduler.start();
   if (tickTimer) return;
   const s = store.getSettings();
   tickTimer = setInterval(tick, (s.tickSec || 20) * 1000);
@@ -733,7 +701,7 @@ function start(id) {
   if (acc.config.pastureLoop) jobs.pasture = Date.now() + Math.random() * 60000;
   if (acc.config.pioneer) jobs.pioneer = Date.now() + Math.random() * 60000;
   if (acc.config.petTrain) jobs.pettrain = Date.now() + Math.random() * 30000;
-  if (acc.config.grabPoints) jobs.grab = computeGrabNext(acc.config, acc);
+  if (acc.config.grabPoints) jobs.grab = grabScheduler.nextRun(acc);
   if (acc.config.goldFight) jobs.goldfight = Date.now() + Math.random() * 30000;
   store.update(id, { config: { enabled: true } });
   store.setStatus(id, { jobs });
@@ -742,6 +710,7 @@ function start(id) {
 }
 
 function stop(id) {
+  grabScheduler.stop(id);
   store.update(id, { config: { enabled: false } });
   store.setStatus(id, { state: 'idle' });
 }
@@ -775,7 +744,7 @@ function resume() {
     if (acc.config.pastureLoop && jobs.pasture == null) jobs.pasture = Date.now() + Math.random() * 60000;
     if (acc.config.pioneer && jobs.pioneer == null) jobs.pioneer = Date.now() + Math.random() * 60000;
     if (acc.config.petTrain && jobs.pettrain == null) jobs.pettrain = Date.now() + Math.random() * 30000;
-    if (acc.config.grabPoints && jobs.grab == null) jobs.grab = computeGrabNext(acc.config, acc);
+    if (acc.config.grabPoints) jobs.grab = grabScheduler.nextRun(acc);
     if (acc.config.goldFight && jobs.goldfight == null) jobs.goldfight = Date.now() + Math.random() * 30000;
     store.setStatus(acc.id, { jobs, state: 'idle' });
   }
@@ -800,4 +769,4 @@ async function cleanMsgPending(id, ids) {
   return { deleted, failed };
 }
 
-module.exports = { recordDailyResult, runCycle, start, stop, resume, resetClient, getClient, relogin, logs, log, cleanMsgPending };
+module.exports = { grabOnce: id => grabScheduler.once(id), recordDailyResult, runCycle, start, stop, resume, resetClient, getClient, relogin, logs, log, cleanMsgPending };

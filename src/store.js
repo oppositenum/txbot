@@ -40,13 +40,12 @@ const DEFAULT_CONFIG = {
   petTrain: false,       // 定时培养
   petTrainWt: 3,         // 兼容旧字段：主属性 3智慧/2斗志/1气质/4体贴
   petTrainWts: [3],      // 轮换培养的属性列表(按优先级)；某个练不了自动换下一个
-  // ===== 聊天室抢积分（每天一次突发轮询）=====
+  // ===== 聊天室抢积分（到开始时间后持续轮询，明确抢满才结束当天）=====
   grabPoints: false,     // 抢字卡积分
   grabRoom: 696,         // 房间 ar1
   grabHour: 12,          // 每天开始抢的整点
   grabMin: 0,            // 分钟
-  grabWindowMin: 10,     // 突发轮询持续分钟
-  grabPollSec: 3,        // 轮询间隔秒(抢卡要频繁，越小越不易错过)
+  grabPollSec: 1,        // 每轮完成后的等待秒数，最低1秒；旧 grabWindowMin 不再限制总时长
   // ===== 圣衣打怪（只打指定等级以下的怪，账号圣衣等级需能进入该地图，公会地图会自动跳过）=====
   goldFight: false,
   goldFightMaxLevel: 29,   // 只打这个等级及以下的怪
@@ -166,11 +165,11 @@ module.exports = {
     save(db);
     return acc;
   },
-  setStatus(id, patch) {
+  setStatus(id, patch, { persist = true } = {}) {
     const acc = this.get(id);
     if (!acc) return;
     Object.assign(acc.status, patch);
-    save(db);
+    if (persist) save(db);
   },
   remove(id) {
     db.accounts = db.accounts.filter((a) => a.id !== id);

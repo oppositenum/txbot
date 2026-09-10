@@ -24,6 +24,7 @@ function schedulerFixture() {
   const scheduler = isolated('scheduler.js', {
     './store': store, './client': { FarmClient: class {}, sleep: async () => {} },
     './plugins': {}, './msgFilter': {}, './daily-result': daily,
+    './grab-scheduler': { createGrabScheduler: () => ({}) },
     './signin': {
       farmSignin: async () => { calls.farm++; return REJECTION; },
       groupSignin: async () => { calls.group++; return '签到成功，获得10积分'; },

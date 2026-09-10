@@ -529,21 +529,46 @@ class FarmClient {
   async openFun(actionId) { return this._act(`openFun.do?actionId=${actionId}`); } // 5浇水/6施肥/7锁定/8禁被施肥
 
 
-  // 聊天室抢字卡积分：房间出现 exchangeCard 表单时全部提交
-  // 返回 {found, full, results}
-  async grabRoomCards(ar1 = 696) {
+  // 每轮读一次房间，只提交页面中实际出现的领取表单。
+  async grabRoomCards(ar1 = 696, { shouldContinue = () => true } = {}) {
+    const { parseGrabResult } = require('./grab-result');
+    const summary = { found: 0, attempted: 0, claimed: 0, points: 0, full: false, limited: false, results: [] };
+    if (!shouldContinue()) return summary;
     const html = await this.req(`https://tx.com.cn/room/rindex.do?op=2&ar1=${ar1}`);
-    const forms = [...new Set([...html.matchAll(/action=['"](exchangeCard\.do\?[^'"]+)['"]/g)].map((m) => m[1].replace(/&amp;/g, '&')))];
-    if (!forms.length) return { found: 0, full: false, results: [] };
-    const results = [];
-    let full = false;
-    for (const f of forms) {
-      const r = strip(await this.req('https://tx.com.cn/room/' + f, { method: 'POST', body: 'is=1' }));
-      const m = r.match(/(赢得\s*\d+\s*积分|抢到[^,。]{0,10}|已达上限|今日[^,。]{0,15}上限|抢满|不能再|来晚了|已被抢|已抢完|成功[^,。]{0,10})/);
-      if (m) results.push(m[0]);
-      if (/已达上限|今日.*上限|抢满|不能再抢|已抢满/.test(r)) full = true;
+    // 房间聊天内容不能作为本账号“已满”的证据，只读取明确的系统提示页。
+    if (/<title[^>]*>[^<]*(?:温馨提示|操作提示|提示信息)[^<]*<\/title>/i.test(html)) {
+      const notice = parseGrabResult(html);
+      if (notice.full || notice.limited) return { ...summary, full: notice.full, limited: notice.limited, results: [notice.message] };
     }
-    return { found: forms.length, full, results };
+    const forms = new Map();
+    for (const m of html.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/gi)) {
+      const action = (m[1].match(/\baction\s*=\s*['"]([^'"]+)['"]/i) || [])[1];
+      if (!action) continue;
+      const url = new URL(action.replace(/&amp;/g, '&'), 'https://tx.com.cn/room/');
+      if (url.origin !== 'https://tx.com.cn' || url.pathname !== '/room/exchangeCard.do') continue;
+      const body = new URLSearchParams();
+      for (const input of m[2].matchAll(/<input\b[^>]*>/gi)) {
+        const name = (input[0].match(/\bname\s*=\s*['"]([^'"]+)['"]/i) || [])[1];
+        const value = (input[0].match(/\bvalue\s*=\s*['"]([^'"]*)['"]/i) || [])[1];
+        if (name && value !== undefined && !/\btype\s*=\s*['"](?:submit|button|checkbox|radio)['"]/i.test(input[0])) body.set(name, value.replace(/&amp;/g, '&'));
+      }
+      body.set('is', '1');
+      forms.set(url.href + '\n' + body.toString(), { url: url.href, body: body.toString() });
+    }
+    summary.found = forms.size;
+    for (const form of forms.values()) {
+      if (!shouldContinue()) break;
+      let result;
+      try { result = parseGrabResult(await this.req(form.url, { method: 'POST', body: form.body })); }
+      catch (e) { e.grabProgress = { ...summary, attempted: summary.attempted + 1 }; throw e; }
+      summary.attempted++;
+      summary.results.push(result.message);
+      if (result.success) { summary.claimed++; summary.points += result.points; }
+      if (result.full) { summary.full = true; break; }
+      if (result.limited) { summary.limited = true; break; }
+      if (result.roundComplete) break; // 本轮已经参与，下一次轮询继续找新一轮。
+    }
+    return summary;
   }
 
   // 签到：取验证码图 + regkey

@@ -19,6 +19,7 @@ main{max-width:1480px;margin-left:216px;padding:43px 46px 32px}.workspace-head{d
 @media(max-width:760px){header{height:64px;padding:0 18px}.brand-mark{width:30px;height:30px;border-radius:9px}.brand{gap:8px}.brand h1{font-size:22px}.nav-btn{padding:8px 10px;font-size:12px;gap:6px}.nav-btn svg{width:16px;height:16px}main{padding:27px 18px 30px}.workspace-head{align-items:flex-start;margin-bottom:24px;gap:8px}.workspace-head h2{font-size:25px}.workspace-head p{font-size:11px;max-width:210px}.eyebrow{font-size:9px}.head-actions{gap:5px;padding-top:24px}.head-actions .btn{padding:8px 10px}.head-actions .refresh-text{display:none}.head-actions .btn.icon-mobile{width:35px;padding:8px}.metrics{gap:0;padding:20px 0;margin-bottom:22px}.metric{padding-left:12px}.metric-value{font-size:27px}.metric-value small{display:none}.metric-label{font-size:10px;gap:5px}.list-tools{flex-direction:column-reverse;align-items:stretch;gap:14px}.search{width:100%;padding:10px 12px}.filter-tabs{justify-content:space-between;gap:0}.filter{padding:8px 10px;font-size:11px}.list-caption{font-size:10px}.account-table{background:transparent;border:0}.table-heading{display:none}.account-row{background:#fff;border:1px solid var(--line);border-radius:11px;margin-bottom:12px}.account-row:last-child{border-bottom:1px solid var(--line)}.account-main{display:grid;grid-template-columns:1fr 1fr;gap:18px 12px;padding:18px;min-height:0}.identity{grid-column:1;gap:9px;grid-row:1}.identity .name{max-width:145px;font-size:14px}.avatar{width:36px;height:36px;border-radius:10px;font-size:14px}.status-cell{grid-column:2;grid-row:1;justify-self:end}.status-cell>.meta{display:none}.switch-wrap{margin-bottom:0;gap:7px}.farm-cell{grid-row:2;grid-column:1/3;border-top:1px solid #edf0e9;padding-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px}.farm-cell .meta{margin-top:0;font-size:11px}.account-actions{grid-column:1/3;justify-content:flex-start;border-top:1px solid #edf0e9;padding-top:12px;gap:8px}.account-actions .btn{flex:1;font-size:12px;min-height:39px}.more>summary{width:36px;height:39px}.account-extra{padding:0 18px 14px;margin-top:-4px}.extra-content{grid-template-columns:1fr;gap:9px}.page-foot{font-size:9px;margin-top:20px}.mask{align-items:flex-end;padding:0}.sheet{border-radius:18px 18px 0 0;max-height:92dvh;padding:24px 20px max(24px,env(safe-area-inset-bottom));border-bottom:0}.sheet h2{font-size:18px;margin-bottom:20px}.sheet::before{content:'';display:block;width:32px;height:4px;background:#dce3d8;border-radius:4px;margin:-12px auto 18px}.dialog-close{right:14px;top:24px}.grid2{gap:0 12px}.f input[type=text],.f input[type=password],.f input[type=number],.f textarea,.f select{font-size:16px;padding:10px}.f label{font-size:11px}.group-features{grid-template-columns:1fr}.group-fields{padding:16px 12px 0}.group-title{font-size:13px}.group-count{font-size:10px}.opt .st{max-width:250px}.sticky-actions{bottom:-24px;padding:14px 0 max(14px,env(safe-area-inset-bottom))}.tab{padding:9px 10px;font-size:12px}.tabs{overflow-x:auto}.li{padding:13px 0;gap:8px}.li .n small{display:block;margin-left:0}.li .btn.s{padding:8px;font-size:11px;min-height:38px}.subtabs{gap:3px}.subtab{padding:7px 9px;font-size:11px;min-height:36px}.acts{gap:7px}.acts .btn{min-height:38px}.toast{bottom:24px;width:max-content;max-width:90vw}.sheetacts .btn{white-space:normal}.search input{font-size:16px}.metrics .metric:last-child{padding-left:10px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 .daily-alert{margin:0 24px 14px;padding:10px 12px;border-left:3px solid var(--warn);background:#fcf5ec;border-radius:4px;font-size:12px;line-height:1.7;overflow-wrap:anywhere}.daily-results{display:grid;gap:8px;margin-top:10px}.daily-result{padding:8px 0;border-top:1px solid var(--line);font-size:12px;line-height:1.6;overflow-wrap:anywhere}.daily-result .chip{margin-left:8px}.daily-alert strong{font-weight:600}@media(max-width:600px){.daily-alert{margin:0 16px 12px}}
+.grab-overview{margin:0 24px 15px;padding:11px 14px;background:#f6f8f3;border:1px solid var(--line);border-radius:7px;font-size:12px;line-height:1.7;overflow-wrap:anywhere}.grab-overview.complete{background:#edf6ee;border-color:#c7ddcc}.grab-heading{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.grab-heading .chip{margin-left:0}.grab-overview.complete .grab-heading strong{color:#286a42}.grab-counts{margin-top:5px;font-variant-numeric:tabular-nums}.grab-counts b{font-weight:650}.grab-message{color:var(--dim);margin-top:3px}@media(max-width:760px){.grab-overview{margin:0 18px 15px;padding:10px 12px}}
 </style>
 </head>
 <body>
@@ -109,8 +110,8 @@ main{max-width:1480px;margin-left:216px;padding:43px 46px 32px}.workspace-head{d
   <div class="grid2">
     <div class="f"><label>抢积分·房间号(ar1)</label><input type="number" id="cGrabRoom"></div>
     <div class="f"><label>抢积分·每天开始(时:分)</label><div style="display:flex;gap:6px"><input type="number" id="cGrabHour" min="0" max="23" style="width:50%"><input type="number" id="cGrabMin" min="0" max="59" style="width:50%"></div></div>
-    <div class="f"><label>抢积分·突发时长(分钟)</label><input type="number" id="cGrabWin" min="1"></div>
-    <div class="f"><label>抢积分·轮询间隔(秒)</label><input type="number" id="cGrabPoll" min="2"></div>
+    <div class="f"><label>抢积分·停止条件</label><div class="hint" id="cGrabStop">开始后持续抢取，网站确认达到当日上限才停止；关闭任务可随时暂停。</div></div>
+    <div class="f"><label>抢积分·每轮等待(秒)</label><input type="number" id="cGrabPoll" min="1"></div>
     <div class="f"><label>圣衣打怪·只打等级≤</label><input type="number" id="cGoldMaxLv" min="1"></div>
     <div class="f"><label>圣衣打怪·兜底轮询上限(分钟)</label><input type="number" id="cGoldPoll" min="1"></div>
     <div class="f"><label>留言监测·巡检间隔(分钟)</label><input type="number" id="cMsgWatchInt" min="10"></div>
@@ -231,7 +232,7 @@ const FEATURES = [
   ['farmSignin','农场签到','每日自动签到(OCR验证码)'],['groupSignin','群组签到','每日自动签到(OCR验证码)'],['qqSignin','QQ签到','每日自动签到'],
   ['petTrain','宠物培养','定时循环培养指定属性'],
   ['goldFight','圣衣打怪','只打配置等级以下的怪，自动跳过公会地图'],
-  ['grabPoints','抢积分','每天定时突发抢聊天室字卡积分'],
+  ['grabPoints','抢积分','每天开始后持续抢取，达到当日上限停止'],
   ['msgWatch','留言骚扰监测','定时巡检好友留言，命中判定只记日志(建议先观察几天)'],
   ['msgAutoDelete','留言骚扰自动删除','⚠️需先开启上面的监测；判定命中直接删除，观察准确后再开'],
 ];
@@ -364,10 +365,25 @@ function dailyResultsHTML(a) {
     return `<div class="daily-result"><strong>${label}</strong><span class="chip ${failed ? 'err' : r ? 'on' : ''}">${state}</span><div class="meta">${esc(when)}${!a.config[k] ? ' · 任务未开启' : ''}</div>${r ? esc(r.message) : oldDate ? '历史记录没有保存网站返回，无法核实签到结果。' : '等待执行'}${blocked ? '<div class="meta">网站限制：多号签到。该项已暂停，跨天、重启和立即执行均不会重试。</div>' : ''}</div>`;
   }).join('') + '</div>';
 }
+function grabStatusHTML(a, overview = false) {
+  const r = a.status?.grabStatus;
+  if (!a.config.grabPoints && !r) return '';
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const current = r?.date === today, complete = current && r.state === 'full';
+  const active = a.config.enabled && a.config.grabPoints;
+  const names = { running:'持续抢取中', retrying:'等待重试', needLogin:'登录失效', paused:'已暂停' };
+  // 当天满额结果优先于开关；历史满额不能显示成今日完成。
+  const state = complete ? '今日已完成' : !active ? '已暂停 · 未完成' : a.status?.needLogin ? '登录失效 · 未完成' : current ? names[r.state] || '等待开始' : '今日待开始';
+  const counts = current ? `<div class="grab-counts">成功 <b>${Number(r.claimed || 0)}</b> 次 · 获得 <b>${Number(r.points || 0)}</b> 积分</div>` : '<div class="grab-counts">今日暂无领取记录</div>';
+  const when = current && r.at ? new Date(r.at).toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }) : '';
+  const detail = current ? `<div class="meta">${esc(r.date)} · ${Number(r.rounds || 0)} 轮${when ? ` · ${complete ? '完成于' : '更新于'} ${esc(when)}` : ''}</div><div class="grab-message">${complete ? '已达当日上限，今天已停止抢取。' : esc([...new Set((r.message || '').split(' / '))].join(' / '))}</div>` : `<div class="meta">${active ? '按设定时间开始，达到当日上限才完成。' : '开启托管和抢积分后继续。'}</div>${r ? `<div class="meta">上次记录 ${esc(r.date)}：成功 ${Number(r.claimed || 0)} 次，获得 ${Number(r.points || 0)} 积分${r.state === 'full' ? '，已达当日上限' : ''}。</div>` : ''}`;
+  return `<div class="${overview ? 'grab-overview' : 'daily-result'}${complete ? ' complete' : ''}"><div class="grab-heading"><strong>今日聊天室积分</strong><span class="chip ${complete ? 'on' : current && r.state === 'running' && active ? 'run' : a.status?.needLogin ? 'err' : ''}">${state}</span></div>${counts}${detail}</div>`;
+}
 function refreshDailyDetail() {
   const a = accounts.find(a => a.id === curId), box = $('#dailyDetail');
   if (!a || !box) return;
-  box.innerHTML = dailyResultsHTML(a);
+  box.innerHTML = dailyResultsHTML(a) + grabStatusHTML(a);
   document.querySelectorAll('[data-signin]').forEach(b => { b.disabled = a.status?.dailyResults?.[b.dataset.signin]?.code === 'SIGNIN_MULTI_ACCOUNT'; b.title = b.disabled ? '网站限制，已停止重试' : ''; });
 }
 function setFilter(filter) {
@@ -429,6 +445,7 @@ function renderAccounts() {
         <div class="account-actions"><button class="btn s" ${command('detail')}>详情 / 操作</button><button class="btn s" ${command('config')}>任务配置</button><details class="more"><summary aria-label="${esc(a.name)}的更多操作">···</summary><div class="more-menu"><button ${command('run')}>立即执行一轮</button><button ${command('browser')}>打开游戏网页</button><button ${command('credentials')}>更新凭证</button>${a.hasCreds ? '<button data-action="relogin">重新登录</button>' : ''}<button class="d" ${command('delete')}>删除账号</button></div></details></div>
       </div>
       ${failures.length ? `<div class="daily-alert"><strong>${blockedCount ? '网站限制：多号签到 · 已停止重试' : '每日任务有失败'}</strong><br>${failures.map(([k,r]) => `${esc(DAILY_LABELS[k] || k)}：${esc(r.message)}`).join('<br>')}</div>` : ''}
+      ${grabStatusHTML(a, true)}
       <details class="account-extra" data-account="${esc(a.id)}" ${expanded.has(a.id) ? 'open' : ''}><summary>${attention ? '查看异常与任务' : features.length + ' 项任务已配置 · 查看详情'}</summary><div class="extra-content"><div><b>已配置任务</b>${esc(features.join(' / ') || '尚未配置任务')}${dailyResultsHTML(a)}</div><div><b>上次执行${st.lastRun ? ' · ' + time(st.lastRun) : ''}</b>${esc(st.lastResult || '暂无执行记录')}<br>${enabled ? esc(jobs.map(([k,t]) => jobNames[k] + ' ' + time(t)).join(' · ') || '等待任务排期') : '自动托管已关闭'}</div></div></details>
     </article>`;
   }).join('');
@@ -501,7 +518,7 @@ function openCfg(id) {
   $('#cPioScene').value = a.config.pioneerScene || 1; $('#cPioAction').value = a.config.pioneerAction || 4;
   const wts = (a.config.petTrainWts && a.config.petTrainWts.length) ? a.config.petTrainWts.map(String) : [String(a.config.petTrainWt || 3)];
   document.querySelectorAll('#cPetTrainWts input').forEach((i) => (i.checked = wts.includes(i.value)));
-  $('#cGrabRoom').value = a.config.grabRoom || 696; $('#cGrabHour').value = a.config.grabHour ?? 12; $('#cGrabMin').value = a.config.grabMin ?? 0; $('#cGrabWin').value = a.config.grabWindowMin || 10; $('#cGrabPoll').value = a.config.grabPollSec || 5;
+  $('#cGrabRoom').value = a.config.grabRoom || 696; $('#cGrabHour').value = a.config.grabHour ?? 12; $('#cGrabMin').value = a.config.grabMin ?? 0; $('#cGrabPoll').value = a.config.grabPollSec || 1;
   $('#cGoldMaxLv').value = a.config.goldFightMaxLevel || 29; $('#cGoldPoll').value = a.config.goldFightPollMaxMin || 5; $('#cMsgWatchInt').value = a.config.msgWatchIntervalMin || 60;
   const sel = $('#cSeed');
   const currentSeed = String(a.config.sowSeedsId ?? 'auto');
@@ -531,7 +548,7 @@ function collectCfg() {
   if (!petTrainWts.length) petTrainWts.push(3);
   const num = (v, def) => (v === '' || v == null || isNaN(+v) ? def : +v); // 0 是合法值(不限)，不能用 || 兜底(会把0吞成默认值)
   const config = { farmPollMaxMin: +$('#cPoll').value || 30, sowSeedsId: $('#cSeed').value, stealMax: num($('#cStealMax').value, 10), careMax: num($('#cCareMax').value, 10), pastureIntervalMin: +$('#cPastureInt').value || 120, pastureFeedIntervalMin: +$('#cPastureFeedInt').value || 210, pioneerScene: +$('#cPioScene').value || 1, pioneerAction: +$('#cPioAction').value || 4, petTrainWts, petTrainWt: petTrainWts[0],
-    grabRoom: +$('#cGrabRoom').value || 696, grabHour: +$('#cGrabHour').value || 0, grabMin: +$('#cGrabMin').value || 0, grabWindowMin: +$('#cGrabWin').value || 10, grabPollSec: +$('#cGrabPoll').value || 5,
+    grabRoom: +$('#cGrabRoom').value || 696, grabHour: +$('#cGrabHour').value || 0, grabMin: +$('#cGrabMin').value || 0, grabPollSec: Math.max(1, +$('#cGrabPoll').value || 1),
     goldFightMaxLevel: +$('#cGoldMaxLv').value || 29, goldFightPollMaxMin: +$('#cGoldPoll').value || 5, msgWatchIntervalMin: +$('#cMsgWatchInt').value || 60 };
   document.querySelectorAll('#cfgOpts input[data-k]').forEach((i) => (config[i.dataset.k] = i.checked));
   return config;
@@ -645,7 +662,7 @@ function renderFarm() {
       <button class="btn s" data-signin="farmSignin" onclick="act('farmSignin')">农场签到</button>
       <button class="btn s" data-signin="groupSignin" onclick="act('groupSignin')">群组签到</button>
       <button class="btn s" data-signin="qqSignin" onclick="act('qqSignin')">QQ签到</button>
-      <button class="btn s" onclick="act('grabOnce')">抢积分(试)</button>
+      <button class="btn s" onclick="act('grabOnce')">抢积分一次</button>
     </div>
     <div id="dailyDetail"></div></details><div class="subtabs" id="farmSubtabs">${FARM_SUBS.map(([k, n]) => `<button class="subtab ${k === curSub ? 'on' : ''}" onclick="farmSub('${k}')">${n}</button>`).join('')}</div>
     <div id="farmSubView"><div class="hint">加载中…</div></div>`;
@@ -804,7 +821,7 @@ const CONFIG_GROUPS = [
   ['每日签到', ['farmSignin','groupSignin','qqSignin','pastureDaily','petDaily','goldDaily'], []],
   ['牧场与拓荒', ['pastureLoop','pastureFeed','pioneer'], ['cPastureInt','cPastureFeedInt','cPioScene','cPioAction']],
   ['宠物与圣衣', ['petTrain','goldFight'], ['cPetTrainWts','cGoldMaxLv','cGoldPoll']],
-  ['聊天室积分', ['grabPoints'], ['cGrabRoom','cGrabHour','cGrabWin','cGrabPoll']],
+  ['聊天室积分', ['grabPoints'], ['cGrabRoom','cGrabHour','cGrabStop','cGrabPoll']],
   ['留言监测', ['msgWatch','msgAutoDelete'], ['cMsgWatchInt']],
 ];
 function initConfigGroups() {

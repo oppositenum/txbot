@@ -298,7 +298,7 @@ const ACTIONS = {
   farmSignin: (c) => require('./signin').farmSignin(c),
   groupSignin: (c) => require('./signin').groupSignin(c),
   qqSignin: (c) => require('./signin').qqSignin(c),
-  grabOnce: async (c, p) => { const r = await c.grabRoomCards(p.room || 696); return r.found ? `抢到:${r.results.join('/')||r.found}` : '当前无抢卡活动'; },
+  grabOnce: () => {}, // 走独立抢积分任务，与持续轮询共用账号锁和真实成功计数
 };
 
 // 插件动作：pasture/pet/gold（客户端复用账号 cookie jar）
@@ -347,7 +347,7 @@ app.post('/api/accounts/:id/action', async (req, res) => {
   const key = req.body.type === 'signin' ? 'farmSignin' : req.body.type;
   if (SIGNIN_KEYS.includes(key)) return manualSignin(acc, key, () => fn(sched.getClient(acc), req.body), res);
   try {
-    const result = await fn(sched.getClient(acc), req.body);
+    const result = req.body.type === 'grabOnce' ? await sched.grabOnce(acc.id) : await fn(sched.getClient(acc), req.body);
     sched.log(acc.id, `手动[${req.body.type}]: ${result}`);
     res.json({ result });
   } catch (e) {

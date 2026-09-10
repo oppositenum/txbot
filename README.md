@@ -2,7 +2,47 @@
 
 tx.com.cn 天下农场的纯协议 bot：不开浏览器，全部游戏操作走 HTTP 请求。支持多账号托管、按账号配置任务、H5 管理面板。
 
-## 运行环境
+## Docker 快速启动（推荐）
+
+只需要安装并启动 Docker，**不需要安装 Node.js 或下载源码**。镜像：[myuwhn/txbot](https://hub.docker.com/r/myuwhn/txbot)，支持 Linux amd64 和 arm64。
+
+以下命令在 Linux / macOS 的终端执行。先拉取镜像：
+
+```bash
+docker pull myuwhn/txbot:latest
+```
+
+**把 `替换成你的登录密码` 改成自己的管理页面密码，再执行启动命令：**
+
+```bash
+docker run -d \
+  --name txbot \
+  --restart unless-stopped \
+  -p 8787:8787 \
+  -e TZ=Asia/Shanghai \
+  -e TXBOT_USER=admin \
+  -e TXBOT_PASS='替换成你的登录密码' \
+  -v txbot-data:/app/data \
+  myuwhn/txbot:latest
+```
+
+启动后打开 `http://服务器IP:8787`；本机运行则打开 [http://localhost:8787](http://localhost:8787)。管理页用户名为 `admin`，密码为刚才设置的密码。进入页面后点击 **+** 添加天下账号，配置任务并打开账号开关，即可开始托管。
+
+- `-p 8787:8787`：左侧是宿主机访问端口，右侧是容器内端口；端口被占用时改为 `-p 18787:8787`，然后访问 `18787`。
+- `TXBOT_USER` / `TXBOT_PASS`：管理页面的用户名和密码，不是天下游戏账号或 Docker Hub 账号。
+- `-v txbot-data:/app/data`：持久化保存账号、配置和状态；升级、重建容器时保持 `txbot-data` 卷名不变。
+- `--restart unless-stopped`：程序退出后自动重启，Docker 服务启动后也会恢复，手动停止的容器除外。
+
+查看状态和日志：
+
+```bash
+docker ps -a --filter name=txbot
+docker logs --tail 100 -f txbot
+```
+
+日志界面按 `Ctrl+C` 只退出查看，程序仍在后台运行。**[完整 Docker 使用说明](deploy/dockerhub.md)** 包含所有启动参数、首次登录、启停、端口和容器名冲突、升级保留数据、Compose 用法及自动发布配置。
+
+## 源码运行环境
 
 纯 Node.js，**Linux / Windows / macOS 通用**，唯一要求：**Node.js 20 或更高**（[下载](https://nodejs.org/)）。检查版本：`node -v`。
 

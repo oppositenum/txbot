@@ -94,6 +94,36 @@ test('抢先/过期不是成功，“已抢完”不是本账号当日上限',()
   assert.equal(parseGrabResult('操作过于频繁，请稍后再试').limited,true);
 });
 
+test('无奖励提示识别为当天抢满，不增加成功次数或积分', () => {
+  for (const msg of ['厉害!不过本次拿不到奖励呢', '厉害！不过本次拿不到奖励呢', '厉害! <span>不过本次拿不到奖励呢</span>']) {
+    const result = parseGrabResult('<h3>提示</h3><p>' + msg + '</p><a>返回聊室</a>');
+    assert.equal(result.full, true, msg);
+    assert.equal(result.success, false);
+    assert.equal(result.points, 0);
+  }
+});
+
+test('无奖励响应停止剩余提交与当天轮询，立即保存，次日恢复', async () => {
+  const client = new FarmClient(null);
+  let requests = 0;
+  client.req = async () => ++requests % 2 === 1
+    ? '<form action="exchangeCard.do?id=1"></form><form action="exchangeCard.do?id=2"></form>'
+    : '<title>聊室</title><h3>提示</h3><p>厉害!不过本次拿不到奖励呢</p><a>返回聊室</a>';
+  const f = fixture(1, () => client.grabRoomCards());
+  await f.start();
+  assert.equal(requests, 2);
+  assert.equal(f.accounts[0].status.grabStatus.state, 'full');
+  assert.equal(f.accounts[0].status.grabStatus.claimed, 0);
+  assert.equal(f.accounts[0].status.grabStatus.points, 0);
+  assert.ok(f.writes.some(w => w.persist && w.patch.grabStatus?.state === 'full'));
+  await f.advance(60 * 60000);
+  assert.equal(requests, 2);
+  assert.match(await f.scheduler.once('a0'), /已达今日上限/);
+  assert.equal(requests, 2);
+  await f.advance(24 * 60 * 60000);
+  assert.equal(requests, 4);
+});
+
 test('发现表单只计发现：去重、携带隐藏字段、遇上限立刻停止剩余提交',async()=>{
   const c=new FarmClient(null),requests=[];
   const form=(n)=>`<form action='/room/exchangeCard.do?id=${n}&amp;room=696'><input name='nonce' value='example'><input name='is' value='1'></form>`;

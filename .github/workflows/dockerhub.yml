@@ -1,0 +1,182 @@
+name: Build & Publish Docker Hub
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dockerhub-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Test and verify container
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install runtime dependencies and run tests
+        run: |
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --test test/*.test.js
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build test image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: txbot:ci
+          build-args: VCS_REF=${{ github.sha }}
+          cache-from: type=gha,scope=txbot-dockerhub
+
+      - name: Verify isolated container
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker rm -f txbot-ci >/dev/null 2>&1 || true' EXIT
+          docker run -d --name txbot-ci --network none --read-only \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --tmpfs /tmp --tmpfs /app/data:uid=1000,gid=1000 \
+            -e TXBOT_USER=ci -e TXBOT_PASS=ci-smoke-only txbot:ci
+          docker exec -i txbot-ci node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const base = 'http://127.0.0.1:8787';
+          const headers = {Authorization: 'Basic ' + Buffer.from('ci:ci-smoke-only').toString('base64')};
+          (async () => {
+            let ready = false;
+            for (let i = 0; i < 60; i++) {
+              try {
+                const r = await fetch(base, {headers, signal: AbortSignal.timeout(1000)});
+                if (r.status === 200) { ready = true; break; }
+              } catch {}
+              await new Promise(resolve => setTimeout(resolve, 250));
+            }
+            assert.ok(ready, 'management page did not start');
+            assert.equal((await fetch(base)).status, 401);
+            assert.deepEqual(await (await fetch(base + '/api/accounts', {headers})).json(), []);
+            const updated = await fetch(base + '/api/settings', {
+              method: 'PUT', headers: {...headers, 'Content-Type': 'application/json'},
+              body: JSON.stringify({maxConcurrent: 7}),
+            });
+            assert.equal(updated.status, 200);
+            assert.equal(JSON.parse(fs.readFileSync('/app/data/accounts.json', 'utf8')).settings.maxConcurrent, 7);
+            assert.equal(process.getuid(), 1000);
+            assert.equal(new Date().getTimezoneOffset(), -480);
+            for (const p of ['.env', 'cookies.json', '.chrome-profile', 'probe', '.git']) {
+              assert.equal(fs.existsSync('/app/' + p), false, p + ' must not be packaged');
+            }
+            require('undici');
+            console.log('Container checks passed: HTTP, login, empty accounts, writable data, user, timezone, dependencies.');
+          })().catch(error => { console.error(error.message); process.exitCode = 1; });
+          NODE
+
+  publish:
+    name: Publish amd64 and arm64
+    needs: verify
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Docker Hub configuration
+        id: config
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$DOCKERHUB_USERNAME" || -z "$DOCKERHUB_TOKEN" ]]; then
+            echo '::error::Set repository variable DOCKERHUB_USERNAME and repository secret DOCKERHUB_TOKEN. See deploy/dockerhub.md.'
+            exit 1
+          fi
+          image="${DOCKERHUB_IMAGE:-${DOCKERHUB_USERNAME}/txbot}"
+          if [[ ! "$image" =~ ^[a-z0-9][a-z0-9_-]*/[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo '::error::DOCKERHUB_IMAGE must be a lowercase namespace/repository, without a registry hostname or tag.'
+            exit 1
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU for arm64
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Generate image tags
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ steps.config.outputs.image }}
+          flavor: latest=false
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
+
+      - name: Build and push both architectures
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VCS_REF=${{ github.sha }}
+          cache-from: type=gha,scope=txbot-dockerhub
+          cache-to: type=gha,mode=max,scope=txbot-dockerhub
+          provenance: mode=min
+
+      - name: Verify published manifest and show result
+        env:
+          IMAGE: ${{ steps.config.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "$IMAGE@$DIGEST"
+          {
+            echo 'Published Docker Hub images:'
+            echo '```text'
+            echo "$TAGS"
+            echo "$IMAGE@$DIGEST"
+            echo '```'
+            echo 'Platforms: linux/amd64, linux/arm64'
+          } >> "$GITHUB_STEP_SUMMARY"

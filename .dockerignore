@@ -1,0 +1,10 @@
+# Only application source and dependency manifests enter the build context.
+**
+!Dockerfile
+!.dockerignore
+!package.json
+!package-lock.json
+!src/
+!src/**
+!web/
+!web/**

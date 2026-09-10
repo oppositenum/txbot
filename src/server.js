@@ -4,9 +4,10 @@ const path = require('path');
 const fs = require('fs');
 const store = require('./store');
 const sched = require('./scheduler');
-const { FarmClient } = require('./client');
+const { FarmClient, USER_AGENT } = require('./client');
 const { PastureClient, PetClient, GoldClient } = require('./plugins');
 const { baseDir } = require('./paths');
+const { SIGNIN_KEYS, isBlocked, signinResultText, classifyResult } = require('./daily-result');
 
 // 轻量读取 .env（跟可执行文件/项目根同一目录），不引入 dotenv 依赖；
 // 已存在的真实环境变量优先，.env 只补没设置过的——方便每次重启不用手动带 TXBOT_USER/PASS
@@ -134,7 +135,7 @@ app.all(/^\/b\/([^/]+)\/(.*)$/, express.raw({ type: () => true, limit: '5mb' }),
       method: req.method,
       headers: {
         Cookie: c.cookieHeader(),
-        'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',
+        'User-Agent': USER_AGENT,
         Referer: 'https://tx.com.cn/',
         ...(req.method === 'POST' ? { 'Content-Type': req.headers['content-type'] || 'application/x-www-form-urlencoded' } : {}),
       },
@@ -322,10 +323,29 @@ const PLUGIN_ACTIONS = {
       return results.join(' / ');
     } },
 };
+function checkSigninBlocked(acc, key, res) {
+  if (!isBlocked(acc, key)) return false;
+  res.status(409).json({ error: '网站限制：多号签到，已停止重试。' + acc.status.dailyResults[key].message, code: 'SIGNIN_MULTI_ACCOUNT' });
+  return true;
+}
+
+async function manualSignin(acc, key, fn, res) {
+  if (checkSigninBlocked(acc, key, res)) return;
+  let outcome;
+  try { outcome = sched.recordDailyResult(acc.id, key, await fn()); }
+  catch (e) { outcome = sched.recordDailyResult(acc.id, key, e.message || String(e), true); }
+  if (!outcome) return res.status(404).json({ error: '账号已删除' });
+  sched.log(acc.id, `手动[${key}]${outcome.state === 'failed' ? '失败' : '成功'}${outcome.code === 'SIGNIN_MULTI_ACCOUNT' ? '（网站限制，已停止重试）' : ''}: ${outcome.message}`);
+  if (outcome.state === 'failed') return res.status(outcome.retryable ? 422 : 409).json({ error: outcome.message, code: outcome.code });
+  res.json({ result: outcome.message });
+}
+
 app.post('/api/accounts/:id/action', async (req, res) => {
   const acc = store.get(req.params.id);
   const fn = ACTIONS[req.body.type];
   if (!acc || !fn) return res.status(400).json({ error: 'bad request' });
+  const key = req.body.type === 'signin' ? 'farmSignin' : req.body.type;
+  if (SIGNIN_KEYS.includes(key)) return manualSignin(acc, key, () => fn(sched.getClient(acc), req.body), res);
   try {
     const result = await fn(sched.getClient(acc), req.body);
     sched.log(acc.id, `手动[${req.body.type}]: ${result}`);
@@ -354,8 +374,17 @@ app.post('/api/accounts/:id/plugin/:plugin', async (req, res) => {
 // ---- 签到（验证码人工输入） ----
 app.get('/api/accounts/:id/signin', async (req, res) => {
   try {
-    const c = sched.getClient(store.get(req.params.id));
-    const { regkey, img } = await c.getSignin();
+    const acc = store.get(req.params.id);
+    if (!acc) return res.status(404).json({ error: '账号不存在' });
+    if (checkSigninBlocked(acc, 'farmSignin', res)) return;
+    const c = sched.getClient(acc);
+    const { regkey, img, html } = await c.getSignin();
+    const text = signinResultText(html);
+    if (classifyResult('farmSignin', text).code === 'SIGNIN_MULTI_ACCOUNT') {
+      sched.recordDailyResult(acc.id, 'farmSignin', text);
+      sched.log(acc.id, `农场签到失败（网站限制，已停止重试）: ${text}`);
+      return checkSigninBlocked(acc, 'farmSignin', res);
+    }
     res.json({ regkey, img: img ? new URL(img, 'https://tx.com.cn/plugins/farm/cs/').href : null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -364,19 +393,16 @@ app.get('/api/accounts/:id/signin', async (req, res) => {
 app.get('/api/accounts/:id/captcha-img', async (req, res) => {
   try {
     const c = sched.getClient(store.get(req.params.id));
-    const r = await c._f(req.query.url, { headers: { Cookie: c.cookieHeader(), 'User-Agent': 'Mozilla/5.0', Referer: 'https://tx.com.cn/plugins/farm/cs/verification.do' } });
+    const r = await c._f(req.query.url, { headers: { Cookie: c.cookieHeader(), 'User-Agent': USER_AGENT, Referer: 'https://tx.com.cn/plugins/farm/cs/verification.do' } });
     res.set('Content-Type', r.headers.get('content-type') || 'image/jpeg');
     res.send(Buffer.from(await r.arrayBuffer()));
   } catch (e) { res.status(500).end(); }
 });
 
 app.post('/api/accounts/:id/signin', async (req, res) => {
-  try {
-    const c = sched.getClient(store.get(req.params.id));
-    const result = await c.signin(req.body.regkey, req.body.authnum);
-    sched.log(req.params.id, `签到: ${result}`);
-    res.json({ result });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  const acc = store.get(req.params.id);
+  if (!acc) return res.status(404).json({ error: '账号不存在' });
+  return manualSignin(acc, 'farmSignin', () => sched.getClient(acc).signin(req.body.regkey, req.body.authnum), res);
 });
 
 const PORT = process.env.PORT || 8787;

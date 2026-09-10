@@ -18,6 +18,7 @@ main{max-width:1480px;margin-left:216px;padding:43px 46px 32px}.workspace-head{d
 @media(max-width:1000px){header{position:sticky;inset:auto;top:0;width:100%;height:72px;padding:0 24px;flex-direction:row;align-items:center;justify-content:space-between;border-right:0;border-bottom:1px solid var(--line)}.brand h1{font-size:23px}.brand-caption{display:none}.nav-label,.side-foot{display:none}.side-nav{flex-direction:row;gap:3px}.nav-btn{padding:9px 12px}.nav-btn.active{display:none}main{margin-left:0;padding:30px 24px}.workspace-head{margin-bottom:26px}.table-heading,.account-main{grid-template-columns:minmax(170px,1fr) minmax(135px,1fr) minmax(112px,.8fr) 194px}}
 @media(max-width:760px){header{height:64px;padding:0 18px}.brand-mark{width:30px;height:30px;border-radius:9px}.brand{gap:8px}.brand h1{font-size:22px}.nav-btn{padding:8px 10px;font-size:12px;gap:6px}.nav-btn svg{width:16px;height:16px}main{padding:27px 18px 30px}.workspace-head{align-items:flex-start;margin-bottom:24px;gap:8px}.workspace-head h2{font-size:25px}.workspace-head p{font-size:11px;max-width:210px}.eyebrow{font-size:9px}.head-actions{gap:5px;padding-top:24px}.head-actions .btn{padding:8px 10px}.head-actions .refresh-text{display:none}.head-actions .btn.icon-mobile{width:35px;padding:8px}.metrics{gap:0;padding:20px 0;margin-bottom:22px}.metric{padding-left:12px}.metric-value{font-size:27px}.metric-value small{display:none}.metric-label{font-size:10px;gap:5px}.list-tools{flex-direction:column-reverse;align-items:stretch;gap:14px}.search{width:100%;padding:10px 12px}.filter-tabs{justify-content:space-between;gap:0}.filter{padding:8px 10px;font-size:11px}.list-caption{font-size:10px}.account-table{background:transparent;border:0}.table-heading{display:none}.account-row{background:#fff;border:1px solid var(--line);border-radius:11px;margin-bottom:12px}.account-row:last-child{border-bottom:1px solid var(--line)}.account-main{display:grid;grid-template-columns:1fr 1fr;gap:18px 12px;padding:18px;min-height:0}.identity{grid-column:1;gap:9px;grid-row:1}.identity .name{max-width:145px;font-size:14px}.avatar{width:36px;height:36px;border-radius:10px;font-size:14px}.status-cell{grid-column:2;grid-row:1;justify-self:end}.status-cell>.meta{display:none}.switch-wrap{margin-bottom:0;gap:7px}.farm-cell{grid-row:2;grid-column:1/3;border-top:1px solid #edf0e9;padding-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px}.farm-cell .meta{margin-top:0;font-size:11px}.account-actions{grid-column:1/3;justify-content:flex-start;border-top:1px solid #edf0e9;padding-top:12px;gap:8px}.account-actions .btn{flex:1;font-size:12px;min-height:39px}.more>summary{width:36px;height:39px}.account-extra{padding:0 18px 14px;margin-top:-4px}.extra-content{grid-template-columns:1fr;gap:9px}.page-foot{font-size:9px;margin-top:20px}.mask{align-items:flex-end;padding:0}.sheet{border-radius:18px 18px 0 0;max-height:92dvh;padding:24px 20px max(24px,env(safe-area-inset-bottom));border-bottom:0}.sheet h2{font-size:18px;margin-bottom:20px}.sheet::before{content:'';display:block;width:32px;height:4px;background:#dce3d8;border-radius:4px;margin:-12px auto 18px}.dialog-close{right:14px;top:24px}.grid2{gap:0 12px}.f input[type=text],.f input[type=password],.f input[type=number],.f textarea,.f select{font-size:16px;padding:10px}.f label{font-size:11px}.group-features{grid-template-columns:1fr}.group-fields{padding:16px 12px 0}.group-title{font-size:13px}.group-count{font-size:10px}.opt .st{max-width:250px}.sticky-actions{bottom:-24px;padding:14px 0 max(14px,env(safe-area-inset-bottom))}.tab{padding:9px 10px;font-size:12px}.tabs{overflow-x:auto}.li{padding:13px 0;gap:8px}.li .n small{display:block;margin-left:0}.li .btn.s{padding:8px;font-size:11px;min-height:38px}.subtabs{gap:3px}.subtab{padding:7px 9px;font-size:11px;min-height:36px}.acts{gap:7px}.acts .btn{min-height:38px}.toast{bottom:24px;width:max-content;max-width:90vw}.sheetacts .btn{white-space:normal}.search input{font-size:16px}.metrics .metric:last-child{padding-left:10px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+.daily-alert{margin:0 24px 14px;padding:10px 12px;border-left:3px solid var(--warn);background:#fcf5ec;border-radius:4px;font-size:12px;line-height:1.7;overflow-wrap:anywhere}.daily-results{display:grid;gap:8px;margin-top:10px}.daily-result{padding:8px 0;border-top:1px solid var(--line);font-size:12px;line-height:1.6;overflow-wrap:anywhere}.daily-result .chip{margin-left:8px}.daily-alert strong{font-weight:600}@media(max-width:600px){.daily-alert{margin:0 16px 12px}}
 </style>
 </head>
 <body>
@@ -350,7 +351,25 @@ async function addWhite(uid, name) {
 }
 
 let accountFilter = 'all', accountsLoaded = false, loadingAccounts = false;
-const needsAttention = (a) => !!(a.status?.needLogin || a.status?.state === 'error');
+const DAILY_LABELS = { farmSignin:'农场签到', groupSignin:'群组签到', qqSignin:'QQ签到', pastureDaily:'牧场每日', petDaily:'宠物每日', goldDaily:'圣衣每日' };
+const dailyFailures = a => Object.entries(a.status?.dailyResults || {}).filter(([,r]) => r.state === 'failed');
+const needsAttention = (a) => !!(a.status?.needLogin || a.status?.state === 'error' || dailyFailures(a).length);
+function dailyResultsHTML(a) {
+  return '<div class="daily-results">' + Object.entries(DAILY_LABELS).map(([k,label]) => {
+    const r = a.status?.dailyResults?.[k], oldDate = a.status?.dailyDone?.[k];
+    if (!r && !a.config[k] && !oldDate) return '';
+    const failed = r?.state === 'failed', blocked = r?.code === 'SIGNIN_MULTI_ACCOUNT';
+    const state = blocked ? '失败 · 已停止重试' : failed ? '失败' : r ? '成功' : oldDate ? '旧完成记录' : '尚无结果';
+    const when = r?.at ? new Date(r.at).toLocaleString('zh-CN') : oldDate || '';
+    return `<div class="daily-result"><strong>${label}</strong><span class="chip ${failed ? 'err' : r ? 'on' : ''}">${state}</span><div class="meta">${esc(when)}${!a.config[k] ? ' · 任务未开启' : ''}</div>${r ? esc(r.message) : oldDate ? '历史记录没有保存网站返回，无法核实签到结果。' : '等待执行'}${blocked ? '<div class="meta">网站限制：多号签到。该项已暂停，跨天、重启和立即执行均不会重试。</div>' : ''}</div>`;
+  }).join('') + '</div>';
+}
+function refreshDailyDetail() {
+  const a = accounts.find(a => a.id === curId), box = $('#dailyDetail');
+  if (!a || !box) return;
+  box.innerHTML = dailyResultsHTML(a);
+  document.querySelectorAll('[data-signin]').forEach(b => { b.disabled = a.status?.dailyResults?.[b.dataset.signin]?.code === 'SIGNIN_MULTI_ACCOUNT'; b.title = b.disabled ? '网站限制，已停止重试' : ''; });
+}
 function setFilter(filter) {
   accountFilter = filter;
   document.querySelectorAll('[data-filter]').forEach((b) => { const on = b.dataset.filter === filter; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
@@ -364,7 +383,7 @@ async function loadAccounts(manual = false) {
   try {
     const next = await api('/accounts');
     if (!Array.isArray(next)) throw new Error('账号列表格式异常');
-    accounts = next; accountsLoaded = true;
+    accounts = next; accountsLoaded = true; refreshDailyDetail();
     $('#loadError').hidden = true;
     const time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     $('#syncStatus').innerHTML = '<i class="dot green"></i>' + time + ' 已更新';
@@ -391,7 +410,8 @@ function renderAccounts() {
   if (!visible.length) { el.innerHTML = accounts.length ? '<div class="empty"><div class="empty-symbol">⌕</div><strong>没有符合条件的账号</strong>试试其他备注、账号或状态。<br><button class="btn" onclick="resetFilters()">清除筛选</button></div>' : '<div class="empty"><div class="empty-symbol">＋</div><strong>添加你的第一个账号</strong>使用账号密码或 Cookie 添加，再开启托管。<br><button class="btn p" onclick="openAdd()">添加账号</button></div>'; return; }
   el.innerHTML = visible.map(a => {
     const st = a.status || {}, f = st.farmInfo, enabled = a.config.enabled, attention = needsAttention(a);
-    const state = st.needLogin ? '登录失效' : st.state === 'error' ? '执行异常' : st.state === 'running' ? '执行中' : enabled ? '托管中' : '已暂停';
+    const failures = dailyFailures(a), blockedCount = failures.filter(([,r]) => r.code === 'SIGNIN_MULTI_ACCOUNT').length;
+    const state = st.needLogin ? '登录失效' : st.state === 'error' ? '执行异常' : blockedCount ? '签到受限' : failures.length ? '每日任务失败' : st.state === 'running' ? '执行中' : enabled ? '托管中' : '已暂停';
     const farmText = f ? (f.harvestable > 0 ? `<em>${Number(f.harvestable)} 块可收割</em>` : f.nextMatureAt ? (f.nextMatureAt <= Date.now() ? '预计已成熟 · 待巡检' : esc(fmtLeft(f.nextMatureAt)) + '成熟') : '暂无成熟作物') : '等待首次同步';
     const time = t => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
     const features = FEATURES.filter(([k]) => a.config[k]).map(([,n]) => n);
@@ -408,7 +428,8 @@ function renderAccounts() {
         <div class="status-cell"><div class="switch-wrap"><label class="sw"><input type="checkbox" ${command('toggle')} aria-label="${esc(a.name)}的自动托管" ${enabled ? 'checked' : ''}><i></i></label><span class="chip ${attention ? 'err' : enabled ? 'on' : ''}">${state}</span></div><div class="meta">${nextText}</div></div>
         <div class="account-actions"><button class="btn s" ${command('detail')}>详情 / 操作</button><button class="btn s" ${command('config')}>任务配置</button><details class="more"><summary aria-label="${esc(a.name)}的更多操作">···</summary><div class="more-menu"><button ${command('run')}>立即执行一轮</button><button ${command('browser')}>打开游戏网页</button><button ${command('credentials')}>更新凭证</button>${a.hasCreds ? '<button data-action="relogin">重新登录</button>' : ''}<button class="d" ${command('delete')}>删除账号</button></div></details></div>
       </div>
-      <details class="account-extra" data-account="${esc(a.id)}" ${expanded.has(a.id) ? 'open' : ''}><summary>${attention ? '查看异常与任务' : features.length + ' 项任务已配置 · 查看详情'}</summary><div class="extra-content"><div><b>已配置任务</b>${esc(features.join(' / ') || '尚未配置任务')}</div><div><b>上次执行${st.lastRun ? ' · ' + time(st.lastRun) : ''}</b>${esc(st.lastResult || '暂无执行记录')}<br>${enabled ? esc(jobs.map(([k,t]) => jobNames[k] + ' ' + time(t)).join(' · ') || '等待任务排期') : '自动托管已关闭'}</div></div></details>
+      ${failures.length ? `<div class="daily-alert"><strong>${blockedCount ? '网站限制：多号签到 · 已停止重试' : '每日任务有失败'}</strong><br>${failures.map(([k,r]) => `${esc(DAILY_LABELS[k] || k)}：${esc(r.message)}`).join('<br>')}</div>` : ''}
+      <details class="account-extra" data-account="${esc(a.id)}" ${expanded.has(a.id) ? 'open' : ''}><summary>${attention ? '查看异常与任务' : features.length + ' 项任务已配置 · 查看详情'}</summary><div class="extra-content"><div><b>已配置任务</b>${esc(features.join(' / ') || '尚未配置任务')}${dailyResultsHTML(a)}</div><div><b>上次执行${st.lastRun ? ' · ' + time(st.lastRun) : ''}</b>${esc(st.lastResult || '暂无执行记录')}<br>${enabled ? esc(jobs.map(([k,t]) => jobNames[k] + ' ' + time(t)).join(' · ') || '等待任务排期') : '自动托管已关闭'}</div></div></details>
     </article>`;
   }).join('');
   if (focused && focusAction) { const row = [...el.querySelectorAll('.account-row')].find(r => r.dataset.account === focused.dataset.account); row?.querySelector(`[data-action="${focusAction}"]`)?.focus({ preventScroll:true }); }
@@ -559,6 +580,7 @@ async function act(type, params = {}, done) {
   toast('执行中…');
   try { const r = await api('/accounts/' + accountId + '/action', { method: 'POST', body: { type, ...params } }); toast(String(r.result || '完成').slice(0, 60)); if (done && curId === accountId && version === detailVersion && $('#mDet').classList.contains('show')) done(); }
   catch (e) { toast('失败: ' + e.message); }
+  finally { if (['farmSignin','groupSignin','qqSignin','signin'].includes(type)) await loadAccounts(); }
 }
 async function pluginAct(plugin, type, params = {}, done) {
   const accountId = curId;
@@ -620,13 +642,14 @@ function renderFarm() {
       <button class="btn s" onclick="act('lockAll',{toLocked:true})">全锁</button>
       <button class="btn s" style="color:var(--warn)" onclick="act('sellAll',{},farmReload)">全售</button>
     </div></div><details class="batch-config"><summary>每日领取与积分</summary><div class="acts">
-      <button class="btn s" onclick="act('farmSignin')">农场签到</button>
-      <button class="btn s" onclick="act('groupSignin')">群组签到</button>
-      <button class="btn s" onclick="act('qqSignin')">QQ签到</button>
+      <button class="btn s" data-signin="farmSignin" onclick="act('farmSignin')">农场签到</button>
+      <button class="btn s" data-signin="groupSignin" onclick="act('groupSignin')">群组签到</button>
+      <button class="btn s" data-signin="qqSignin" onclick="act('qqSignin')">QQ签到</button>
       <button class="btn s" onclick="act('grabOnce')">抢积分(试)</button>
     </div>
-    </details><div class="subtabs" id="farmSubtabs">${FARM_SUBS.map(([k, n]) => `<button class="subtab ${k === curSub ? 'on' : ''}" onclick="farmSub('${k}')">${n}</button>`).join('')}</div>
+    <div id="dailyDetail"></div></details><div class="subtabs" id="farmSubtabs">${FARM_SUBS.map(([k, n]) => `<button class="subtab ${k === curSub ? 'on' : ''}" onclick="farmSub('${k}')">${n}</button>`).join('')}</div>
     <div id="farmSubView"><div class="hint">加载中…</div></div>`;
+  refreshDailyDetail();
   farmSub(curSub);
 }
 function farmReload() { if (curTab === 'farm') farmSub(curSub); }
@@ -766,10 +789,12 @@ async function openSignin() {
     $('#capImg').onclick = openSignin;
     $('#capIn').value = ''; show('mSign');
   } catch (e) { toast('获取验证码失败: ' + e.message); }
+  finally { await loadAccounts(); }
 }
 async function doSignin() {
   try { const r = await api('/accounts/' + curId + '/signin', { method: 'POST', body: { regkey: curRegkey, authnum: $('#capIn').value.trim() } }); hide('mSign'); toast(r.result || '完成'); }
   catch (e) { toast('签到失败: ' + e.message); }
+  finally { await loadAccounts(); }
 }
 
 // Configure existing controls in place: IDs and serialized API fields remain unchanged.

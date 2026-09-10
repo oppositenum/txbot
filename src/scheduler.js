@@ -7,14 +7,8 @@ const { farmSignin, groupSignin, qqSignin } = require('./signin');
 const msgFilter = require('./msgFilter');
 const store = require('./store');
 
-// 本地时区的"今天"日期字符串。注意：不能用 toISOString()，那是 UTC——
-// 服务器在 GMT+8 时区时，本地时间00:00~07:59这段窗口 UTC 还没跨天，
-// 用 toISOString() 会把"今天"误判成"昨天"，导致每日任务在本地新的一天
-// 头8小时里被误认为"已经做过"而跳过，实际要等到本地早上8点(UTC跨天)才补做。
-const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+const { DAILY_KEYS, todayStr, classifyResult, isBlocked, isSettled } = require('./daily-result');
+
 const jitter = (ms, pct = 0.15) => ms + ms * pct * (Math.random() * 2 - 1);
 
 const logs = {};       // id -> [{ts,msg}]
@@ -73,15 +67,15 @@ function jobEnabled(acc, type) {
 }
 
 // ==================== 计算下次执行时间 ====================
-// acc 可选：用于判断今天是否已做过(lastDaily)，没做过则尽快补做而非等明天
+// 成功项和网站限制项均无需补跑；限制项保留失败状态，不计入 lastDaily。
 function computeDailyNext(acc) {
   const s = store.getSettings();
   const spread = () => Math.random() * (s.dailySpreadMin || 120) * 60000;
   const now = new Date();
   const start = new Date(now); start.setHours(s.dailyStartHour || 0, s.dailyStartMin || 0, 0, 0);
   if (now < start) return start.getTime() + spread();                 // 今天还没到起始点 → 今天起点
-  if (!acc || acc.status.lastDaily !== todayStr()) return Date.now() + Math.random() * 300000; // 今天没做过 → 5分钟内补做
-  return start.getTime() + 86400000 + spread();                       // 今天已做 → 明天
+  if (!acc || DAILY_KEYS.some(k => acc.config[k] && !isSettled(acc, k))) return Date.now() + Math.random() * 300000; // 今天没做过 → 5分钟内补做
+  return start.getTime() + 86400000 + spread();                       // 今天已处理（含暂停）→ 明天检查
 }
 
 function setJob(id, type, nextRun) {
@@ -350,14 +344,34 @@ async function runCareJob(id) {
   setJob(id, 'care', pollNext(cfg));
 }
 
-// ==================== daily job（每日签到/领取，并行处理，按任务去重）====================
+// 每项执行后立即落盘，普通农场任务的 state/lastResult 不会覆盖签到失败。
+function recordDailyResult(id, key, value, error = false) {
+  const acc = store.get(id);
+  if (!acc) return null;
+  // 已暂停项不会被同一时间尚未结束的旧请求覆盖为成功。
+  if (isBlocked(acc, key)) return acc.status.dailyResults[key];
+  const date = todayStr();
+  const result = { ...classifyResult(key, value, error), date, at: Date.now() };
+  result.message = result.message.slice(0, 300);
+  const dailyDone = { ...(acc.status.dailyDone || {}) };
+  if (result.state === 'success') dailyDone[key] = date;
+  else delete dailyDone[key];
+  const allDone = DAILY_KEYS.filter(k => acc.config[k]).every(k => dailyDone[k] === date);
+  store.setStatus(id, {
+    dailyDone,
+    dailyResults: { ...(acc.status.dailyResults || {}), [key]: result },
+    lastDaily: allDone ? date : null,
+  });
+  return result;
+}
+
+// ==================== daily job（串行执行，按任务去重）====================
 async function runDailyJob(id, c) {
   const acc = store.get(id);
   const cfg = acc.config;
   const today = todayStr();
   const proxy = acc.proxy;
-  const done = { ...(acc.status.dailyDone || {}) };
-  // 各每日任务：每个用独立客户端(同一cookie)，便于并行
+  // 各每日任务使用独立客户端（同一 cookie）
   const nc = () => new FarmClient(acc.cookie, { proxy });
   const defs = [];
   if (cfg.farmSignin) defs.push(['farmSignin', '农场签到', () => farmSignin(nc())]);
@@ -379,38 +393,37 @@ async function runDailyJob(id, c) {
   }]);
   if (cfg.goldDaily) defs.push(['goldDaily', '圣衣每日', () => new GoldClient(acc.cookie, { proxy }).dailyReward()]);
 
-  // 只处理今天还没做的
-  const todo = defs.filter(([k]) => done[k] !== today);
+  // 只处理今天未成功且未被网站限制的任务
+  const todo = defs.filter(([k]) => !isSettled(acc, k, today));
   if (!todo.length) { setJob(id, 'daily', computeDailyNext(acc)); return; }
 
-  // 串行执行（不并行）：签到/每日领取是风控重点盯防的行为模式，同一账号短时间内
-  // 并发打出好几个"领取"类请求不像真人操作，任务间加随机间隔更安全
-  let loginFail = 0;
+  let loginFail = 0, attempted = 0;
   for (let i = 0; i < todo.length; i++) {
     const [k, label, fn] = todo[i];
+    if (isSettled(acc, k, today)) continue;
+    attempted++;
+    let result;
     try {
-      const text = String(await fn());
-      // 请求本身没报错不代表业务上成功——风控拒绝("系统检测多号刷签到")、
-      // 验证码识别错误等都是这类情况，不能标记为"今天已完成"，否则以后再也不会重试
-      const rejected = /失败|系统检测|验证码错误|请稍后再试|操作过于频繁/.test(text);
-      if (rejected) log(id, `${label}(未成功，30分钟后重试): ${text.slice(0, 50)}`);
-      else { done[k] = today; log(id, `${label}: ${text.slice(0, 40)}`); }
+      result = recordDailyResult(id, k, String(await fn()));
     } catch (e) {
       if (e.code === 'NOT_LOGGED_IN') loginFail++;
-      log(id, `${label}失败: ${e.message || e}`);
+      result = recordDailyResult(id, k, e.message || String(e), true);
     }
-    if (i < todo.length - 1) await sleep(2000 + Math.random() * 3000); // 任务间隔2-5秒，模拟真人逐个操作
+    if (!result) return; // 执行过程中账号被删除
+    const outcome = result.code === 'SIGNIN_MULTI_ACCOUNT' ? '失败，网站限制：多号签到，已停止自动重试'
+      : result.state === 'failed' ? '失败，30分钟后重试' : '成功';
+    log(id, `${label}(${outcome}): ${result.message}`);
+    if (i < todo.length - 1) await sleep(2000 + Math.random() * 3000);
   }
-  store.setStatus(id, { dailyDone: done });
 
-  const allDone = defs.every(([k]) => done[k] === today);
-  if (allDone) store.setStatus(id, { lastDaily: today });
-  // Cookie 失效且全失败 → 抛出让 runJob 重登重试
-  if (loginFail === todo.length && loginFail > 0) { const e = new Error('NOT_LOGGED_IN'); e.code = 'NOT_LOGGED_IN'; throw e; }
-  // 全部完成→明天；有未完成→30分钟后重试剩余的
-  const next = allDone ? computeDailyNext(acc) : Date.now() + jitter(30 * 60000);
+  const completed = defs.filter(([k]) => acc.status.dailyDone?.[k] === today).length;
+  const blocked = defs.filter(([k]) => isBlocked(acc, k)).length;
+  const pending = defs.some(([k]) => !isSettled(acc, k, today));
+  // Cookie 失效且全失败 → 交给 runJob 重登；网站限制不进入重登重试。
+  if (loginFail === attempted && attempted > 0) { const e = new Error('NOT_LOGGED_IN'); e.code = 'NOT_LOGGED_IN'; throw e; }
+  const next = pending ? Date.now() + jitter(30 * 60000) : computeDailyNext(acc);
   setJob(id, 'daily', next);
-  log(id, `每日任务 ${defs.filter(([k]) => done[k] === today).length}/${defs.length} 完成${allDone ? '' : '(剩余30分钟后重试)'}；下次 ${new Date(next).toLocaleString()}`);
+  log(id, `每日任务 ${completed}/${defs.length} 成功，${blocked} 项失败已暂停${pending ? '；其他未完成项30分钟后重试' : ''}；下次检查 ${new Date(next).toLocaleString()}`);
 }
 
 // ==================== pasture 循环 job ====================
@@ -787,4 +800,4 @@ async function cleanMsgPending(id, ids) {
   return { deleted, failed };
 }
 
-module.exports = { runCycle, start, stop, resume, resetClient, getClient, relogin, logs, log, cleanMsgPending };
+module.exports = { recordDailyResult, runCycle, start, stop, resume, resetClient, getClient, relogin, logs, log, cleanMsgPending };

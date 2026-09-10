@@ -1,6 +1,7 @@
 // FarmClient — tx.com.cn 天下农场纯协议客户端
 const BASE = 'https://tx.com.cn/plugins/farm/cs/';
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+// 所有游戏协议请求统一使用已实测可签到的手机设备标识。
+const UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36';
 
 let ProxyAgent = null, undiciFetch = null;
 try { ({ ProxyAgent, fetch: undiciFetch } = require('undici')); } catch { /* undici 不可用则代理功能禁用 */ }
@@ -555,8 +556,8 @@ class FarmClient {
 
   async signin(regkey, authnum) {
     const html = await this.req('/plugins/farm/cs/gift.do', { method: 'POST', body: `regkey=${regkey}&authnum=${authnum}` });
-    return FarmClient.resultText(html);
+    return require('./daily-result').signinResultText(html);
   }
 }
 
-module.exports = { FarmClient, strip, sleep };
+module.exports = { FarmClient, strip, sleep, USER_AGENT: UA };

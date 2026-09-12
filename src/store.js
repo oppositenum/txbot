@@ -70,6 +70,80 @@ const DEFAULT_SETTINGS = {
   msgOffenders: [],      // 留言骚扰惯犯 uid 名单(全局共享，跨账号)：命中过一次的人，以后发的消息不用再逐条判定内容
 };
 
+const ACCOUNT_EXPORT_FORMAT = 'txbot-account-export';
+const ACCOUNT_EXPORT_VERSION = 1;
+const MAX_IMPORT_ACCOUNTS = 1000;
+
+const freshStatus = () => ({ state: 'idle', lastRun: null, lastResult: null, level: null, coin: null, needLogin: false, lastDaily: null, jobs: {} });
+const plainObject = (value) => value && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+const cookieValue = (cookie, name) => (String(cookie || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`, 'i')) || [])[1] || null;
+const accountIdentities = (account) => {
+  const identities = [];
+  if (account.useruid) identities.push(`uid:${String(account.useruid).trim().toLocaleLowerCase()}`);
+  const txuid = cookieValue(account.cookie, 'txuid');
+  if (txuid) identities.push(`txuid:${txuid}`);
+  const session = cookieValue(account.cookie, 'JSESSIONID');
+  if (session) identities.push(`session:${session}`);
+  return identities;
+};
+
+function importError(message) {
+  const error = new Error(message);
+  error.code = 'INVALID_ACCOUNT_EXPORT';
+  return error;
+}
+
+function transferString(value, label, max) {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string') throw importError(`${label}格式错误`);
+  if (value.length > max) throw importError(`${label}超过长度限制`);
+  return value;
+}
+
+function normalizeTransferConfig(raw, index) {
+  if (raw == null) return {};
+  if (!plainObject(raw)) throw importError(`第${index + 1}个账号的任务配置格式错误`);
+  const config = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!Object.hasOwn(DEFAULT_CONFIG, key)) throw importError(`第${index + 1}个账号包含未知配置项: ${key}`);
+    const scalar = value == null || ['string', 'number', 'boolean'].includes(typeof value);
+    const list = Array.isArray(value) && value.length <= 100 && value.every((item) => ['string', 'number', 'boolean'].includes(typeof item));
+    if ((!scalar && !list) || (typeof value === 'number' && !Number.isFinite(value))) {
+      throw importError(`第${index + 1}个账号的配置项 ${key} 格式错误`);
+    }
+    config[key] = value;
+  }
+  return config;
+}
+
+function normalizeAccountExport(payload) {
+  if (!plainObject(payload) || payload.format !== ACCOUNT_EXPORT_FORMAT || payload.version !== ACCOUNT_EXPORT_VERSION) {
+    throw importError('不是受支持的 txbot 账号导出文件');
+  }
+  if (!Array.isArray(payload.accounts) || !payload.accounts.length) throw importError('导出文件中没有账号');
+  if (payload.accounts.length > MAX_IMPORT_ACCOUNTS) throw importError(`单次最多导入${MAX_IMPORT_ACCOUNTS}个账号`);
+  const identities = new Set();
+  return payload.accounts.map((raw, index) => {
+    if (!plainObject(raw)) throw importError(`第${index + 1}个账号格式错误`);
+    const useruid = transferString(raw.useruid, `第${index + 1}个账号`, 200);
+    const password = transferString(raw.password, `第${index + 1}个账号密码`, 4096);
+    const cookie = transferString(raw.cookie, `第${index + 1}个账号Cookie`, 131072);
+    if (!(useruid && password) && !(cookie && /(?:^|;\s*)JSESSIONID=/i.test(cookie))) {
+      throw importError(`第${index + 1}个账号缺少有效的账号密码或Cookie`);
+    }
+    const account = {
+      name: transferString(raw.name, `第${index + 1}个账号备注`, 200) || useruid || `导入账号${index + 1}`,
+      cookie, useruid, password,
+      proxy: transferString(raw.proxy, `第${index + 1}个账号代理`, 2048),
+      config: normalizeTransferConfig(raw.config, index),
+    };
+    const keys = accountIdentities(account);
+    if (!keys.length || keys.some((key) => identities.has(key))) throw importError(`第${index + 1}个账号与文件内其他账号重复`);
+    keys.forEach((key) => identities.add(key));
+    return account;
+  });
+}
+
 function load() {
   try {
     const db = JSON.parse(fs.readFileSync(FILE, 'utf8'));
@@ -137,6 +211,60 @@ module.exports = {
     save(db);
     return n;
   },
+  exportAccounts() {
+    return {
+      format: ACCOUNT_EXPORT_FORMAT,
+      version: ACCOUNT_EXPORT_VERSION,
+      exportedAt: new Date().toISOString(),
+      sensitive: true,
+      accounts: db.accounts.map((a) => ({
+        sourceId: a.id,
+        name: a.name,
+        cookie: a.cookie || null,
+        useruid: a.useruid || null,
+        password: a.password || null,
+        proxy: a.proxy || null,
+        config: { ...a.config },
+      })),
+    };
+  },
+  importAccounts(payload, { overwrite = false, resumeEnabled = false } = {}) {
+    const incoming = normalizeAccountExport(payload);
+    const byIdentity = new Map();
+    db.accounts.forEach((account) => accountIdentities(account).forEach((key) => {
+      if (!byIdentity.has(key)) byIdentity.set(key, new Set());
+      byIdentity.get(key).add(account);
+    }));
+    const matchedTargets = new Set();
+    const plans = incoming.map((item, index) => {
+      const identities = accountIdentities(item);
+      const matches = new Set(identities.flatMap((key) => [...(byIdentity.get(key) || [])]));
+      if (matches.size > 1) throw importError(`第${index + 1}个账号匹配到目标服务器中的多个账号`);
+      const current = matches.values().next().value || null;
+      if (current && matchedTargets.has(current.id)) throw importError(`第${index + 1}个账号与文件内其他账号匹配到同一目标账号`);
+      if (current) matchedTargets.add(current.id);
+      return { item, current };
+    });
+    const result = { total: incoming.length, added: 0, updated: 0, skipped: 0, affected: [] };
+    for (const { item, current } of plans) {
+      const config = { ...DEFAULT_CONFIG, ...item.config, enabled: resumeEnabled && item.config.enabled === true };
+      if (current && !overwrite) { result.skipped++; continue; }
+      if (current) {
+        Object.assign(current, { name: item.name, cookie: item.cookie, useruid: item.useruid, password: item.password, proxy: item.proxy, config });
+        current.status = { ...(current.status || freshStatus()), state: 'idle', needLogin: false, jobs: {} };
+        result.updated++;
+        result.affected.push({ id: current.id, enabled: config.enabled, action: 'updated' });
+        continue;
+      }
+      const id = 'a' + (Math.max(0, ...db.accounts.map((a) => +a.id.slice(1) || 0)) + 1);
+      const account = { id, name: item.name, cookie: item.cookie, useruid: item.useruid, password: item.password, proxy: item.proxy, config, status: freshStatus() };
+      db.accounts.push(account);
+      result.added++;
+      result.affected.push({ id, enabled: config.enabled, action: 'added' });
+    }
+    if (result.added || result.updated) save(db);
+    return result;
+  },
   add({ name, cookie, useruid, password, proxy, config }) {
     const id = 'a' + (Math.max(0, ...db.accounts.map((a) => +a.id.slice(1))) + 1);
     const acc = {
@@ -147,7 +275,7 @@ module.exports = {
       password: password || null,
       proxy: proxy || null,        // 每账号独立代理 http://[user:pass@]host:port
       config: { ...DEFAULT_CONFIG, ...(db.settings.defaultConfig || {}), ...(config || {}) },
-      status: { state: 'idle', lastRun: null, lastResult: null, level: null, coin: null, needLogin: false, lastDaily: null, jobs: {} },
+      status: freshStatus(),
     };
     db.accounts.push(acc);
     save(db);

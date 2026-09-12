@@ -20,6 +20,7 @@ main{max-width:1480px;margin-left:216px;padding:43px 46px 32px}.workspace-head{d
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 .daily-alert{margin:0 24px 14px;padding:10px 12px;border-left:3px solid var(--warn);background:#fcf5ec;border-radius:4px;font-size:12px;line-height:1.7;overflow-wrap:anywhere}.daily-results{display:grid;gap:8px;margin-top:10px}.daily-result{padding:8px 0;border-top:1px solid var(--line);font-size:12px;line-height:1.6;overflow-wrap:anywhere}.daily-result .chip{margin-left:8px}.daily-alert strong{font-weight:600}@media(max-width:600px){.daily-alert{margin:0 16px 12px}}
 .grab-overview{margin:0 24px 15px;padding:11px 14px;background:#f6f8f3;border:1px solid var(--line);border-radius:7px;font-size:12px;line-height:1.7;overflow-wrap:anywhere}.grab-overview.complete{background:#edf6ee;border-color:#c7ddcc}.grab-heading{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.grab-heading .chip{margin-left:0}.grab-overview.complete .grab-heading strong{color:#286a42}.grab-counts{margin-top:5px;font-variant-numeric:tabular-nums}.grab-counts b{font-weight:650}.grab-message{color:var(--dim);margin-top:3px}@media(max-width:760px){.grab-overview{margin:0 18px 15px;padding:10px 12px}}
+#mImport .sheet{max-width:540px}.transfer-icon{font-size:17px;line-height:1}.transfer-warning{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;border-left:3px solid var(--warn);background:#fbf6ed;padding:13px 14px;margin-bottom:18px;font-size:11px;color:var(--dim)}.transfer-warning strong{color:var(--warn);font-size:12px}.file-picker{display:flex;align-items:center;gap:12px;margin-bottom:12px}.file-picker span{font-size:11px;color:var(--dim);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.transfer-summary{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:8px;color:var(--dim);font-size:12px}.transfer-summary.error{background:#fcf0e8;color:var(--err);border-color:#efd6cb}@media(max-width:760px){.workspace-head{flex-wrap:wrap;gap:14px 8px}.workspace-head p{max-width:250px}.head-actions{width:100%;padding-top:0;justify-content:flex-end}}
 </style>
 </head>
 <body>
@@ -36,7 +37,7 @@ main{max-width:1480px;margin-left:216px;padding:43px 46px 32px}.workspace-head{d
 <main id="workspace">
   <section class="workspace-head" aria-labelledby="pageTitle">
     <div><div class="eyebrow">ACCOUNT OVERVIEW</div><h2 id="pageTitle">账号总览</h2><p>查看托管状态，安排好每一个账号。</p></div>
-    <div class="head-actions"><button class="btn icon-mobile" onclick="loadAccounts(true)" id="refreshBtn" aria-label="刷新账号列表"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/></svg><span class="refresh-text">刷新</span></button><button class="btn p" onclick="openAdd()"><span aria-hidden="true">＋</span> 添加账号</button></div>
+    <div class="head-actions"><button class="btn icon-mobile" onclick="loadAccounts(true)" id="refreshBtn" aria-label="刷新账号列表"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/></svg><span class="refresh-text">刷新</span></button><button class="btn" onclick="openImport()" title="导入账号配置"><span class="transfer-icon" aria-hidden="true">↑</span>导入</button><button class="btn" onclick="exportAccounts()" title="导出账号配置"><span class="transfer-icon" aria-hidden="true">↓</span>导出</button><button class="btn p" onclick="openAdd()"><span aria-hidden="true">＋</span> 添加账号</button></div>
   </section>
   <section class="metrics" aria-label="账号统计">
     <div class="metric"><div class="metric-label">全部账号</div><div class="metric-value" id="metricAll">—</div></div>
@@ -75,6 +76,18 @@ main{max-width:1480px;margin-left:216px;padding:43px 46px 32px}.workspace-head{d
       <textarea id="aCookie" placeholder="JSESSIONID=xxx; txuid=xxx; txEncodeUid=xxx; ..."></textarea></div>
   </div>
   <div class="sheetacts"><button class="btn" onclick="hide('mAdd')">取消</button><button class="btn p" id="saveBtn" onclick="saveAccount()">保存并登录</button></div>
+</div></div>
+
+<!-- 导入账号 -->
+<div class="mask" id="mImport"><div class="sheet">
+  <h2>导入账号配置</h2><p class="dialog-intro">从另一台 txbot 服务器迁移账号、登录凭证、代理和任务配置。</p>
+  <div class="transfer-warning"><strong>敏感文件</strong><span>迁移包包含账号密码和 Cookie，请仅通过可信渠道传输并妥善保管。</span></div>
+  <input class="sr-only" type="file" id="importFile" accept=".json,application/json" onchange="inspectImportFile(this)">
+  <div class="file-picker"><button class="btn" type="button" onclick="$('#importFile').click()">选择 JSON 文件</button><span id="importFileName">尚未选择文件</span></div>
+  <div class="transfer-summary" id="importSummary" aria-live="polite">等待选择 txbot 账号导出文件</div>
+  <div class="opt"><div><div class="t" id="overwriteImportLabel">覆盖目标服务器中的同账号</div><div class="st">关闭时自动跳过重复账号</div></div><label class="sw"><input type="checkbox" id="importOverwrite" aria-labelledby="overwriteImportLabel"><i></i></label></div>
+  <div class="opt"><div><div class="t" id="resumeImportLabel">沿用导出时的启用状态</div><div class="st">仅在旧服务器已经停止后开启，避免两个实例同时运行</div></div><label class="sw"><input type="checkbox" id="importResume" aria-labelledby="resumeImportLabel"><i></i></label></div>
+  <div class="sheetacts"><button class="btn" onclick="hide('mImport')">取消</button><button class="btn p" id="importBtn" onclick="importAccounts()" disabled>导入账号</button></div>
 </div></div>
 
 <!-- 全局设置 -->
@@ -171,7 +184,7 @@ main{max-width:1480px;margin-left:216px;padding:43px 46px 32px}.workspace-head{d
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
-let accounts = [], curId = null, curRegkey = null, logTimer = null;
+let accounts = [], curId = null, curRegkey = null, logTimer = null, pendingImport = null;
 const $ = (s) => document.querySelector(s);
 const api = async (p, opt) => {
   const r = await fetch('/api' + p, opt ? { headers: {'Content-Type':'application/json'}, ...opt, body: opt.body ? JSON.stringify(opt.body) : undefined } : undefined);
@@ -181,6 +194,63 @@ const api = async (p, opt) => {
 };
 let toastTimer;
 const toast = (m) => { const t = $('#toast'); clearTimeout(toastTimer); t.textContent = m; t.classList.add('show'); toastTimer = setTimeout(() => t.classList.remove('show'), 4000); };
+
+async function exportAccounts() {
+  if (!accounts.length) return toast('当前没有可导出的账号');
+  if (!confirm('导出文件包含账号密码和 Cookie。确定导出并自行妥善保管吗？')) return;
+  const response = await fetch('/api/accounts/export', { cache: 'no-store' });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || response.status);
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const filename = (disposition.match(/filename="?([^";]+)"?/i) || [])[1] || `txbot-accounts-${new Date().toISOString().slice(0,10)}.json`;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(`已导出 ${accounts.length} 个账号`);
+}
+
+function openImport() {
+  pendingImport = null;
+  $('#importFile').value = '';
+  $('#importFileName').textContent = '尚未选择文件';
+  $('#importSummary').textContent = '等待选择 txbot 账号导出文件';
+  $('#importSummary').classList.remove('error');
+  $('#importOverwrite').checked = false;
+  $('#importResume').checked = false;
+  $('#importBtn').disabled = true;
+  show('mImport');
+}
+
+async function inspectImportFile(input) {
+  const file = input.files?.[0];
+  pendingImport = null; $('#importBtn').disabled = true;
+  if (!file) return;
+  $('#importFileName').textContent = `${file.name} · ${Math.max(1, Math.ceil(file.size / 1024))} KB`;
+  try {
+    if (file.size > 1024 * 1024) throw new Error('文件不能超过 1 MB');
+    const data = JSON.parse(await file.text());
+    if (data?.format !== 'txbot-account-export' || data?.version !== 1 || !Array.isArray(data.accounts) || !data.accounts.length) throw new Error('不是有效的 txbot 账号导出文件');
+    pendingImport = data;
+    $('#importSummary').textContent = `已识别 ${data.accounts.length} 个账号 · 导出于 ${data.exportedAt ? new Date(data.exportedAt).toLocaleString('zh-CN') : '未知时间'}`;
+    $('#importSummary').classList.remove('error');
+    $('#importBtn').disabled = false;
+  } catch (e) {
+    $('#importSummary').textContent = '文件校验失败：' + e.message;
+    $('#importSummary').classList.add('error');
+  }
+}
+
+async function importAccounts() {
+  if (!pendingImport) return toast('请先选择有效的导出文件');
+  const result = await api('/accounts/import', { method: 'POST', body: { backup: pendingImport, overwrite: $('#importOverwrite').checked, resumeEnabled: $('#importResume').checked } });
+  hide('mImport'); pendingImport = null;
+  toast(`导入完成：新增${result.added}，覆盖${result.updated}，跳过${result.skipped}`);
+  await loadAccounts();
+}
 const modalStack = [];
 let modalSequence = 0;
 function syncModalState() {
@@ -881,7 +951,7 @@ document.addEventListener('click', e => {
 let actionTrigger = null;
 document.addEventListener('click', e => { actionTrigger = e.target.closest('button'); }, true);
 const pendingActions = new Set();
-for (const name of ['saveAccount','saveSettings','saveCfg','saveCfgAsDefault','applyCfgToAll','del','toggle','runNow','relogin','act','pluginAct','addProxy','delProxy','applyProxySel','addWhite','doCleanMsgPending','pastureHarvestEach','doSignin']) {
+for (const name of ['saveAccount','saveSettings','saveCfg','saveCfgAsDefault','applyCfgToAll','del','toggle','runNow','relogin','act','pluginAct','addProxy','delProxy','applyProxySel','addWhite','doCleanMsgPending','pastureHarvestEach','doSignin','exportAccounts','importAccounts']) {
   const original = window[name];
   window[name] = async function(...args) {
     const key = name + ':' + (['del','toggle','runNow','relogin'].includes(name) ? args[0] : curId || 'global');

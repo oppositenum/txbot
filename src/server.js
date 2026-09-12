@@ -85,6 +85,27 @@ app.post('/api/apply-proxy', (req, res) => {
 // ---- 账号管理 ----
 app.get('/api/accounts', (req, res) => res.json(store.list().map(pub)));
 
+app.get('/api/accounts/export', (req, res) => {
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  res.set('Cache-Control', 'no-store');
+  res.set('Content-Disposition', `attachment; filename="txbot-accounts-${stamp}.json"`);
+  res.json(store.exportAccounts());
+});
+
+app.post('/api/accounts/import', (req, res) => {
+  try {
+    const { backup, overwrite, resumeEnabled } = req.body || {};
+    const result = store.importAccounts(backup, { overwrite: overwrite === true, resumeEnabled: resumeEnabled === true });
+    for (const account of result.affected) {
+      sched.resetClient(account.id);
+      account.enabled ? sched.start(account.id) : sched.stop(account.id);
+    }
+    res.json({ ok: true, total: result.total, added: result.added, updated: result.updated, skipped: result.skipped });
+  } catch (e) {
+    res.status(400).json({ error: e.message, code: e.code || 'IMPORT_FAILED' });
+  }
+});
+
 // 支持两种模式：{cookie} 或 {useruid, password}；均可带 proxy
 app.post('/api/accounts', async (req, res) => {
   const { name, cookie, useruid, password, proxy, config } = req.body;

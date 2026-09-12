@@ -182,9 +182,10 @@ class FarmClient {
   // 解析成熟倒计时文本 "X小时Y分钟后成熟" → 分钟；无则 null
   static matureMinutes(text) {
     if (!text) return null;
-    const h = +(text.match(/(\d+)\s*小时/) || [])[1] || 0;
-    const m = +(text.match(/(\d+)\s*分钟/) || [])[1] || 0;
-    return (h || m) ? h * 60 + m : null;
+    const hMatch = text.match(/(\d+)\s*小时/);
+    const mMatch = text.match(/(\d+)\s*分钟/);
+    if (!hMatch && !mMatch) return null;
+    return +(hMatch?.[1] || 0) * 60 + +(mMatch?.[1] || 0);
   }
 
   // 农场下次可收获还需多少分钟：有已成熟地=0；否则取最近成熟；全空/无作物=null

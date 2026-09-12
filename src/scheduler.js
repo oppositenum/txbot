@@ -11,6 +11,8 @@ const { createGrabScheduler } = require('./grab-scheduler');
 const { DAILY_KEYS, todayStr, classifyResult, isBlocked, isSettled } = require('./daily-result');
 
 const jitter = (ms, pct = 0.15) => ms + ms * pct * (Math.random() * 2 - 1);
+const FARM_CRITICAL_RETRY_MS = 5000;
+const FARM_CRITICAL_WINDOW_MS = 90000;
 
 const logs = {};       // id -> [{ts,msg}]
 const clients = {};    // id -> FarmClient（含 proxy）
@@ -88,6 +90,61 @@ function setJob(id, type, nextRun) {
 }
 
 // ==================== farm job ====================
+const harvestSucceeded = (text) => /一键收获全部成熟作物|得到:|收获了.*获得经验/.test(text || '');
+
+// 网站最后一分钟只显示整数分钟，实际成熟点会在0-60秒内波动。临界期直接重试
+// 一键收获，避免反复读取所有土地分页，也避免一次过早检查后退回普通巡检。
+async function watchCriticalHarvest(id, c, cfg, farm, did) {
+  if (!cfg.harvest || FarmClient.nextFarmActionMinutes(farm.lands) > 1) return farm;
+  if (FarmClient.nextFarmActionMinutes(farm.lands) == null) return farm;
+
+  const deadline = Date.now() + FARM_CRITICAL_WINDOW_MS;
+  let current = farm;
+  let attempts = 0;
+  log(id, '作物进入最后一分钟，开始5秒间隔抢收（最多持续90秒）');
+
+  while (Date.now() <= deadline) {
+    attempts++;
+    try {
+      const r = await c.harvestAll();
+      if (harvestSucceeded(r)) {
+        if (!did.includes('收割')) did.push('收割');
+        log(id, `临界抢收成功: ${r}`);
+        current = await c.getFarm();
+        const nextMin = FarmClient.nextFarmActionMinutes(current.lands);
+        if (nextMin == null || nextMin > 1) return current;
+      }
+    } catch (e) {
+      log(id, `临界抢收第${attempts}次波动: ${e.message}`);
+    }
+
+    if (Date.now() >= deadline) break;
+    await sleep(Math.min(FARM_CRITICAL_RETRY_MS, deadline - Date.now()));
+  }
+
+  try {
+    current = await c.getFarm();
+    if (current.lands.some((l) => l.canHarvest)) {
+      const r = await c.harvestAll();
+      if (harvestSucceeded(r)) {
+        if (!did.includes('收割')) did.push('收割');
+        log(id, `临界抢收成功: ${r}`);
+        current = await c.getFarm();
+      }
+    }
+  } catch (e) {
+    log(id, `临界抢收结束检查波动: ${e.message}`);
+  }
+  return current;
+}
+
+function farmErrorRetryDelay(acc, now = Date.now()) {
+  const info = acc?.status?.farmInfo;
+  const critical = info && (info.harvestable > 0
+    || (info.nextMatureAt != null && info.nextMatureAt <= now + 60000));
+  return critical ? FARM_CRITICAL_RETRY_MS : jitter(10 * 60000);
+}
+
 async function runFarmJob(id, c) {
   const acc = store.get(id);
   const cfg = acc.config;
@@ -171,12 +228,14 @@ async function runFarmJob(id, c) {
   if (cfg.sellAll) { const r = await c.sellAll(); did.push('出售'); log(id, `全售: ${r}`); }
 
   // 计算下次唤醒：最近成熟时间，封顶 farmPollMaxMin（捕捉被偷/被加速）
-  const finalFarm = await c.getFarm();
+  let finalFarm = await c.getFarm();
+  finalFarm = await watchCriticalHarvest(id, c, cfg, finalFarm, did);
   const cap = (cfg.farmPollMaxMin || 30) * 60000;
   const nextMin = FarmClient.nextFarmActionMinutes(finalFarm.lands);
-  let delay = nextMin == null ? cap : Math.min(nextMin * 60000, cap);
-  if (delay < 60000) delay = 60000; // 至少1分钟
-  const next = Date.now() + jitter(delay);
+  const critical = nextMin != null && nextMin <= 1;
+  let delay = critical ? FARM_CRITICAL_RETRY_MS : (nextMin == null ? cap : Math.min(nextMin * 60000, cap));
+  if (!critical && delay < 60000) delay = 60000;
+  const next = Date.now() + (critical ? delay : jitter(delay));
   setJob(id, 'farm', next);
   // 缓存农场倒计时概览（供卡片展示，不额外请求）
   store.setStatus(id, {
@@ -618,7 +677,8 @@ async function runJob(id, type, retried = false) {
     if (e.code === 'JOB_TIMEOUT') {
       log(id, `❌ ${e.message}，强制重新排期`);
       store.setStatus(id, { state: 'error', lastResult: `${type}执行超时` });
-      setJob(id, type, Date.now() + jitter(10 * 60000));
+      const delay = type === 'farm' ? farmErrorRetryDelay(store.get(id)) : jitter(10 * 60000);
+      setJob(id, type, Date.now() + delay);
       return; // finally 仍会执行，释放锁
     }
     if (e.code === 'NOT_LOGGED_IN' && acc.useruid && acc.password && !retried) {
@@ -637,7 +697,8 @@ async function runJob(id, type, retried = false) {
       store.setStatus(id, { state: 'error', lastResult: '错误: ' + e.message });
       log(id, `❌ ${type} 出错: ${e.message}`);
       // 出错也要排下次，避免卡死（延后重试）
-      setJob(id, type, Date.now() + jitter(10 * 60000));
+      const delay = type === 'farm' ? farmErrorRetryDelay(store.get(id)) : jitter(10 * 60000);
+      setJob(id, type, Date.now() + delay);
     }
   } finally {
     running.delete(key); activeCount--;

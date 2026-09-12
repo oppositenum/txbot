@@ -694,8 +694,10 @@ async function refreshLogs() {
   const el = $('#logView'); if (!el) return;
   const logs = await api('/accounts/' + curId + '/logs').catch(() => []);
   if (accountId !== curId || !el.isConnected) return;
+  // 只有用户本来就在底部时才跟随新日志；上翻查看历史时保留当前位置。
+  const stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 24;
   el.textContent = logs.slice(-150).map((l) => `${new Date(l.ts).toLocaleTimeString()} ${l.msg}`).join('\n') || '暂无日志';
-  el.scrollTop = el.scrollHeight;
+  if (stickToBottom) el.scrollTop = el.scrollHeight;
 }
 
 // 留言骚扰待处理清单（观察期命中但没自动删的，攒在这里等人工确认清理）

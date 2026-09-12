@@ -73,6 +73,7 @@ const DEFAULT_SETTINGS = {
 const ACCOUNT_EXPORT_FORMAT = 'txbot-account-export';
 const ACCOUNT_EXPORT_VERSION = 1;
 const MAX_IMPORT_ACCOUNTS = 1000;
+const RETIRED_TRANSFER_CONFIG_KEYS = new Set(['grabWindowMin']);
 
 const freshStatus = () => ({ state: 'idle', lastRun: null, lastResult: null, level: null, coin: null, needLogin: false, lastDaily: null, jobs: {} });
 const plainObject = (value) => value && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
@@ -105,6 +106,7 @@ function normalizeTransferConfig(raw, index) {
   if (!plainObject(raw)) throw importError(`第${index + 1}个账号的任务配置格式错误`);
   const config = {};
   for (const [key, value] of Object.entries(raw)) {
+    if (RETIRED_TRANSFER_CONFIG_KEYS.has(key)) continue;
     if (!Object.hasOwn(DEFAULT_CONFIG, key)) throw importError(`第${index + 1}个账号包含未知配置项: ${key}`);
     const scalar = value == null || ['string', 'number', 'boolean'].includes(typeof value);
     const list = Array.isArray(value) && value.length <= 100 && value.every((item) => ['string', 'number', 'boolean'].includes(typeof item));
@@ -224,7 +226,7 @@ module.exports = {
         useruid: a.useruid || null,
         password: a.password || null,
         proxy: a.proxy || null,
-        config: { ...a.config },
+        config: Object.fromEntries(Object.entries(DEFAULT_CONFIG).map(([key, fallback]) => [key, Object.hasOwn(a.config, key) ? a.config[key] : fallback])),
       })),
     };
   },

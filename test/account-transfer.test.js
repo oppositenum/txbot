@@ -24,7 +24,7 @@ test('账号导出包含继续运行所需配置，但不包含临时状态', ()
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'txbot-export-'));
   try {
     const store = isolatedStore(dir);
-    const account = store.add({ name: '主号', useruid: '10001', password: 'secret', cookie: 'JSESSIONID=session1; txuid=10001', proxy: 'http://proxy:8080', config: { enabled: true, steal: true } });
+    const account = store.add({ name: '主号', useruid: '10001', password: 'secret', cookie: 'JSESSIONID=session1; txuid=10001', proxy: 'http://proxy:8080', config: { enabled: true, steal: true, grabWindowMin: 10 } });
     store.setStatus(account.id, { coin: 999, lastResult: '运行记录' });
     const bundle = store.exportAccounts();
     assert.equal(bundle.format, 'txbot-account-export');
@@ -35,6 +35,7 @@ test('账号导出包含继续运行所需配置，但不包含临时状态', ()
     assert.equal(bundle.accounts[0].cookie, 'JSESSIONID=session1; txuid=10001');
     assert.equal(bundle.accounts[0].proxy, 'http://proxy:8080');
     assert.equal(bundle.accounts[0].config.steal, true);
+    assert.equal('grabWindowMin' in bundle.accounts[0].config, false);
     assert.equal('status' in bundle.accounts[0], false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -98,6 +99,24 @@ test('账密账号和相同txuid的Cookie账号识别为同一账号', () => {
     const result = store.importAccounts({ format: 'txbot-account-export', version: 1, accounts: [cookieAccount] });
     assert.equal(result.skipped, 1);
     assert.equal(store.list().length, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('旧迁移包的grabWindowMin已废弃但不会阻断导入', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'txbot-legacy-import-'));
+  try {
+    const store = isolatedStore(dir);
+    const legacy = {
+      format: 'txbot-account-export', version: 1,
+      accounts: [{ name: '旧配置账号', useruid: '10003', password: 'pass', cookie: null, proxy: null, config: { enabled: true, grabWindowMin: 10, grabPollSec: 3 } }],
+    };
+    const result = store.importAccounts(legacy, { resumeEnabled: true });
+    assert.equal(result.added, 1);
+    assert.equal(store.list()[0].config.enabled, true);
+    assert.equal(store.list()[0].config.grabPollSec, 3);
+    assert.equal('grabWindowMin' in store.list()[0].config, false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

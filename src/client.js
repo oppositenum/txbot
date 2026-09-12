@@ -11,6 +11,18 @@ const strip = (h) =>
   h.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<style[\s\S]*?<\/style>/g, '')
     .replace(/<[^>]+>/g, ' ').replace(/&gt;/g, '>').replace(/&lt;/g, '<')
     .replace(/&#34;/g, '"').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
+const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const actionLinkEntries = (html, action) => {
+  const pattern = action instanceof RegExp ? action.source : escapeRegExp(action);
+  const re = new RegExp(`${pattern}\\.do\\?[^"'<>\\s]+`, 'g');
+  return [...String(html).matchAll(re)].map((m) => ({ href: m[0].replace(/&amp;/g, '&'), index: m.index }));
+};
+const actionLinks = (html, action) => actionLinkEntries(html, action).map(({ href }) => href);
+const queryValue = (href, name) => {
+  if (!href) return null;
+  const i = href.indexOf('?');
+  return i < 0 ? null : new URLSearchParams(href.slice(i + 1)).get(name);
+};
 
 class FarmClient {
   // cookie: 字符串 "k=v; k2=v2" 或 {k:v} 对象；opts.proxy: "http://[user:pass@]host:port"
@@ -243,13 +255,10 @@ class FarmClient {
       if (!head) continue;
       // 网站会把会话参数 z 放在 landId 前面，并以 HTML 实体编码连接符；
       // 不能假设 landId 紧跟在问号后面，否则页面显示可收割但调度器会漏判。
-      const href = (name) => {
-        const raw = (b.match(new RegExp(`${name}\\.do\\?[^"'<>\\s]+`)) || [])[0];
-        return raw ? raw.replace(/&amp;/g, '&') : null;
-      };
+      const href = (name) => actionLinks(b, name)[0] || null;
       const harvestHref = href('harvest');
-      const landHref = ['harvest', 'upLandInfo', 'water', 'steal'].map(href).find(Boolean) || null;
-      const landId = Number(new URLSearchParams(landHref?.split('?')[1] || '').get('landId')) || null;
+      const landHref = ['harvest', 'upLandInfo', 'water', 'weeding', /killInsect\w*/, 'steal'].map(href).find(Boolean) || null;
+      const landId = Number(queryValue(landHref, 'landId')) || null;
       const land = {
         pos: +head[2],
         black: head[1] === '黑土地',
@@ -260,10 +269,10 @@ class FarmClient {
         matureIn: (t.match(/(\d+小时)?(\d+分钟)?后成熟/) || [])[0] || null,
         yield: (t.match(/产[\d+]+\/剩\d+/) || [])[0] || null,
         empty: /空地/.test(t),
-        needWater: (b.match(/water\.do\?landId=\d+[^"']*/) || [])[0] || null,
-        needWeed: (b.match(/weeding\.do\?landId=\d+[^"']*/) || [])[0] || null,
-        needKill: (b.match(/killInsect\w*\.do\?landId=\d+[^"']*/) || [])[0] || null,
-        canSteal: (b.match(/steal\.do\?landId=\d+&(?:amp;)?tuid=\d+/) || [])[0] || null,
+        needWater: href('water'),
+        needWeed: href('weeding'),
+        needKill: href(/killInsect\w*/),
+        canSteal: href('steal'),
         canHarvest: landId && harvestHref ? harvestHref : null,
       };
       lands.push(land);
@@ -274,12 +283,12 @@ class FarmClient {
   // 种子袋 {seedsId, name, count}；兼容一键种植(sowSeedsAll)与普通单株(sowSeeds)两种布局
   // 第1页拿总页数后，其余页并行拉取（种子多的大号不用一页页排队等）
   async getBag() {
-    const parsePage = (html) => {
-      const re = /([一-龥A-Za-z0-9]+)\s*\((\d+)\s*粒?\)[\s\S]{0,260}?sowSeeds(?:All)?\.do\?(?:landId=\d+&(?:amp;)?)?seedsId=(\d+)/g;
-      const out = []; let m;
-      while ((m = re.exec(html))) out.push({ name: m[1], count: +m[2], seedsId: +m[3] });
-      return out;
-    };
+    const parsePage = (html) => actionLinkEntries(html, /sowSeeds(?:All)?/).flatMap(({ href, index }) => {
+      const seedsId = Number(queryValue(href, 'seedsId')) || 0;
+      const before = String(html).slice(Math.max(0, index - 260), index);
+      const m = before.match(/([一-龥A-Za-z0-9]+)\s*\((\d+)\s*粒?\)[\s\S]*$/);
+      return seedsId && m ? [{ name: m[1], count: +m[2], seedsId }] : [];
+    });
     const seen = new Set();
     const seeds = [];
     const addAll = (list) => { for (const s of list) if (!seen.has(s.seedsId)) { seen.add(s.seedsId); seeds.push(s); } };
@@ -296,8 +305,13 @@ class FarmClient {
 
   // 果实仓库 {seedsId, name, count, locked}；同上并行翻页
   async getStore() {
-    const parsePage = (html) => [...html.matchAll(/([一-龥A-Za-z0-9]+)\((\d+)\)[\s\S]{0,300}?lock\.do\?seedsId=(\d+)&(?:amp;)?lock=(\d)/g)]
-      .map((m) => ({ name: m[1], count: +m[2], seedsId: +m[3], locked: m[4] === '1' }));
+    const parsePage = (html) => actionLinkEntries(html, 'lock').flatMap(({ href, index }) => {
+      const seedsId = Number(queryValue(href, 'seedsId')) || 0;
+      const lock = queryValue(href, 'lock');
+      const before = String(html).slice(Math.max(0, index - 300), index);
+      const m = before.match(/([一-龥A-Za-z0-9]+)\s*\((\d+)\)[\s\S]*$/);
+      return seedsId && lock != null && m ? [{ name: m[1], count: +m[2], seedsId, locked: lock === '1' }] : [];
+    });
     const html1 = await this.req('myStore.do?pn=1');
     const t1 = strip(html1);
     const total = +(t1.match(/总价:(\d+)/) || [])[1] || 0;
@@ -353,21 +367,27 @@ class FarmClient {
   // 任务列表
   async getTasks() {
     const html = await this.req('taskOrders.do');
-    return [...html.matchAll(/orderInfo\.do\?taskId=(\d+)[^>]*>\s*([^<]{1,40})/g)].map((m) => ({ taskId: +m[1], name: m[2].trim() }));
+    return actionLinkEntries(html, 'orderInfo').flatMap(({ href, index }) => {
+      const taskId = Number(queryValue(href, 'taskId')) || 0;
+      const name = (String(html).slice(index).match(/^[^>]*>\s*([^<]{1,40})/) || [])[1];
+      return taskId && name ? [{ taskId, name: name.trim() }] : [];
+    });
   }
 
   async getTaskInfo(taskId) {
     const html = await this.req(`orderInfo.do?taskId=${taskId}`);
     const t = strip(html);
-    const orderIdM = html.match(/finishOrder\.do\?orderId=(\d+)/); // 库存够时才出现，即"可完成"的判据
+    const finishHref = actionLinks(html, 'finishOrder')[0]; // 库存够时才出现，即"可完成"的判据
+    const orderId = Number(queryValue(finishHref, 'orderId')) || null;
+    const seedHref = actionLinks(html, 'seedsInfo')[0];
     return {
       taskId,
       name: (t.match(/任务名称[:：]\s*(.+?)\s*等级要求/) || [])[1]?.trim() || null,
       need: (t.match(/上交需求[:：]\s*([^\s]+)/) || [])[1] || null,
       have: +(t.match(/仓库有此果实[:：]\s*(\d+)个/) || [])[1] || 0,
-      seedsId: +(html.match(/seedsInfo\.do\?seedsId=(\d+)/) || [])[1] || null,
-      canFinish: !!orderIdM,
-      orderId: orderIdM ? +orderIdM[1] : null,
+      seedsId: Number(queryValue(seedHref, 'seedsId')) || null,
+      canFinish: !!orderId,
+      orderId,
     };
   }
 
@@ -378,7 +398,7 @@ class FarmClient {
   // 列出一页留言的 id（新消息排在前，第1页=最新）
   async getMessagePage(page = 1) {
     const html = await this.req(`https://tx.com.cn/im/cs/commonReceiveManage.do?page=${page}`);
-    return [...new Set([...html.matchAll(/commonReceiveDetail\.do\?id=(\d+)/g)].map((m) => +m[1]))];
+    return [...new Set(actionLinks(html, 'commonReceiveDetail').map((href) => Number(queryValue(href, 'id'))).filter(Boolean))];
   }
   // 读取单条留言详情：发件人昵称/uid + 正文
   // 时间戳有两种格式：近期是"[MM-DD HH:MM:SS]"，超过一年的老留言是"[YYYY-MM-DD HH:MM:SS]"，
@@ -396,8 +416,12 @@ class FarmClient {
 
   // 商店种子列表
   static parseShopItems(html) {
-    return [...html.matchAll(/([一-龥A-Za-z0-9]+)[:：](\d+)级[\s\S]{0,100}?单价[:：](\d+)金币[\s\S]{0,200}?seedsInfo\.do\?seedsId=(\d+)/g)]
-      .map((m) => ({ name: m[1], level: +m[2], price: +m[3], seedsId: +m[4] }));
+    return actionLinkEntries(html, 'seedsInfo').flatMap(({ href, index }) => {
+      const seedsId = Number(queryValue(href, 'seedsId')) || 0;
+      const before = String(html).slice(Math.max(0, index - 300), index);
+      const m = before.match(/([一-龥A-Za-z0-9]+)[:：](\d+)级[\s\S]{0,100}?单价[:：](\d+)金币[\s\S]*$/);
+      return seedsId && m ? [{ name: m[1], level: +m[2], price: +m[3], seedsId }] : [];
+    });
   }
   async getShop(category = 0, lv = 0, pn = 1) {
     const html = await this.req(`shop.do?category=${category}&lv=${lv}&pn=${pn}`);
@@ -406,7 +430,9 @@ class FarmClient {
   // 官方"推荐种植"(myInfo.do 页面按账号等级给出的等级种子)：{seedsId, name, price, sellPrice, needLevel}
   async getRecommendedSeed() {
     const html = await this.req('myInfo.do');
-    const seedsId = +((html.match(/推荐种植[:：]<a href="seedsInfo\.do\?seedsId=(\d+)"/) || [])[1] || 0);
+    const marker = html.indexOf('推荐种植');
+    const seedHref = marker >= 0 ? actionLinks(html.slice(marker, marker + 240), 'seedsInfo')[0] : null;
+    const seedsId = Number(queryValue(seedHref, 'seedsId')) || 0;
     if (!seedsId) return null;
     const info = await this.req(`seedsInfo.do?seedsId=${seedsId}`);
     const t = strip(info);
@@ -471,11 +497,15 @@ class FarmClient {
     const tasks = [];
     // 每块地对应一组操作链接；按 landId 归组
     const grab = (re) => [...html.matchAll(re)].map((m) => ({ landId: m[1], tuid: m[2] }));
-    const harvest = new Set([...html.matchAll(/harvestFriendLand\.do\?landId=(\d+)/g)].map((m) => m[1]));
-    const dig = new Set([...html.matchAll(/digFriendLand\.do\?landId=(\d+)/g)].map((m) => m[1]));
-    const kill = new Set([...html.matchAll(/killFriendInsects\.do\?landId=(\d+)/g)].map((m) => m[1]));
-    const weed = new Set([...html.matchAll(/weedingFriend\.do\?landId=(\d+)/g)].map((m) => m[1]));
-    const water = new Map([...html.matchAll(/waterFriendLand\.do\?landId=(\d+)&(?:amp;)?tuid=(\d+)/g)].map((m) => [m[1], m[2]]));
+    const idsFor = (name) => new Set(actionLinks(html, name).map((href) => queryValue(href, 'landId')).filter(Boolean));
+    const harvest = idsFor('harvestFriendLand');
+    const dig = idsFor('digFriendLand');
+    const kill = idsFor('killFriendInsects');
+    const weed = idsFor('weedingFriend');
+    const water = new Map(actionLinks(html, 'waterFriendLand').flatMap((href) => {
+      const landId = queryValue(href, 'landId'), tuid = queryValue(href, 'tuid');
+      return landId && tuid ? [[landId, tuid]] : [];
+    }));
     void grab;
     const ids = new Set([...harvest, ...dig, ...kill, ...weed, ...water.keys()]);
     for (const id of ids) tasks.push({ landId: id, canHarvest: harvest.has(id), needDig: dig.has(id), needKill: kill.has(id), needWeed: weed.has(id), needWater: water.has(id), tuid: water.get(id) || null });
@@ -595,4 +625,4 @@ class FarmClient {
   }
 }
 
-module.exports = { FarmClient, strip, sleep, USER_AGENT: UA };
+module.exports = { FarmClient, strip, sleep, actionLinks, actionLinkEntries, queryValue, USER_AGENT: UA };

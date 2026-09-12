@@ -1,5 +1,5 @@
 // 牧场/宠物/圣衣 插件客户端：复用 FarmClient 的登录与请求逻辑（继承）
-const { FarmClient, strip } = require('./client');
+const { FarmClient, strip, actionLinks, actionLinkEntries, queryValue } = require('./client');
 const R = FarmClient.resultText;
 
 // ===================== 天下牧场 =====================
@@ -31,9 +31,9 @@ class PastureClient extends FarmClient {
       level: +(t.match(/等级[:：]\s*(\d+)/) || [])[1] || 0,
       waCoin: +((t.match(/哇币[:：]\s*([\d,]+)/) || [])[1] || '0').replace(/,/g, ''),
       happyCoin: +((t.match(/开心币[:：]\s*([\d,]+)/) || [])[1] || '0').replace(/,/g, ''),
-      harvestable: [...html.matchAll(/harvest\.do\?id=(\d+)/g)].map((m) => +m[1]),
-      idleCorrals: [...new Set([...html.matchAll(/myFemales\.do\?id=(\d+)/g)].map((m) => +m[1]))],
-      needFeed: [...new Set([...html.matchAll(/feedConfirm\.do\?id=(\d+)/g)].map((m) => +m[1]))].length,
+      harvestable: actionLinks(html, 'harvest').map((href) => Number(queryValue(href, 'id'))).filter(Boolean),
+      idleCorrals: [...new Set(actionLinks(html, 'myFemales').map((href) => Number(queryValue(href, 'id'))).filter(Boolean))],
+      needFeed: [...new Set(actionLinks(html, 'feedConfirm').map((href) => queryValue(href, 'id')).filter(Boolean))].length,
       corrals,
       nextMatureMin: mins.length ? Math.min(...mins) : null,
       dogHungry: /挨饿中/.test(t),
@@ -52,13 +52,17 @@ class PastureClient extends FarmClient {
   // 闲置圈舍 id 列表（可饲养）
   async getIdleCorrals() {
     const html = await this.req('index.do');
-    return [...new Set([...html.matchAll(/myFemales\.do\?id=(\d+)/g)].map((m) => +m[1]))];
+    return [...new Set(actionLinks(html, 'myFemales').map((href) => Number(queryValue(href, 'id'))).filter(Boolean))];
   }
   // 幼仔库存 [{femaleid, name, count}]（用一键饲养页解析，无需圈舍）
   async getBabies() {
     const html = await this.req('myFemales.do?oneKey=oneKey');
-    return [...html.matchAll(/([一-龥A-Za-z0-9]+)\((\d+)\)[\s\S]{0,120}?(?:oneKeyFeedAnimal|feed)\.do\?femaleid=(\d+)/g)]
-      .map((m) => ({ name: m[1], count: +m[2], femaleid: +m[3] }));
+    return actionLinkEntries(html, /oneKeyFeedAnimal|feed/).flatMap(({ href, index }) => {
+      const femaleid = Number(queryValue(href, 'femaleid')) || 0;
+      const before = html.slice(Math.max(0, index - 140), index);
+      const m = before.match(/([一-龥A-Za-z0-9]+)\((\d+)\)[\s\S]*$/);
+      return femaleid && m ? [{ name: m[1], count: +m[2], femaleid }] : [];
+    });
   }
   // 单圈舍饲养
   async feed(femaleid, corralId) { return R(await this.req(`feed.do?femaleid=${femaleid}&fcorralid=${corralId}&pn=0`)); }
@@ -90,7 +94,7 @@ class PastureClient extends FarmClient {
   async feedAnimals() {
     const uid = this.jar.txuid || '';
     const h = await this.req('index.do');
-    const ids = [...new Set([...h.matchAll(/feedConfirm\.do\?id=(\d+)/g)].map((m) => m[1]))];
+    const ids = [...new Set(actionLinks(h, 'feedConfirm').map((href) => queryValue(href, 'id')).filter(Boolean))];
     let n = 0, bought = false;
     for (const id of ids) {
       let r = await this.req(`feedConfirm.do?id=${id}&uid=${uid}`);
@@ -107,7 +111,7 @@ class PastureClient extends FarmClient {
   async cleanAnimals() {
     const uid = this.jar.txuid || '';
     const h = await this.req('index.do');
-    const ids = [...new Set([...h.matchAll(/clean\.do\?id=(\d+)/g)].map((m) => m[1]))];
+    const ids = [...new Set(actionLinks(h, 'clean').map((href) => queryValue(href, 'id')).filter(Boolean))];
     let n = 0;
     for (const id of ids) { await this.req(`clean.do?id=${id}&from=${uid}`); n++; }
     return n;
@@ -159,7 +163,7 @@ class PetClient extends FarmClient {
   // 劳动·种花：收获所有花圃（被动产出，定期收）
   async harvestWork() {
     const html = await this.req('work.do?tpi=0');
-    const links = [...new Set([...html.matchAll(/harvest\.do\?tpi=0&(?:amp;)?ht=\d+&(?:amp;)?gid=\d+&(?:amp;)?pp=\d+/g)].map((m) => m[0].replace(/&amp;/g, '&')))];
+    const links = [...new Set(actionLinks(html, 'harvest').filter((href) => queryValue(href, 'tpi') === '0' && queryValue(href, 'ht') && queryValue(href, 'gid') && queryValue(href, 'pp')))];
     let n = 0;
     for (const l of links) { await this.req(l); n++; }
     return n;
@@ -214,9 +218,9 @@ class GoldClient extends FarmClient {
   }
   async dailyReward() { // 领取每日奖励（chestsTask 页开每日宝箱）
     const page = await this.req('chestsTask.do');
-    const m = page.match(/chestsOpen\.do\?chestsId=(\d+)/);
-    if (!m) return strip(page).match(/(已开|已领|明日|每日宝箱)[^。]{0,30}/)?.[0] || '今日无可开宝箱';
-    return R(await this.req(`chestsOpen.do?chestsId=${m[1]}`));
+    const chestHref = actionLinks(page, 'chestsOpen').find((href) => queryValue(href, 'chestsId'));
+    if (!chestHref) return strip(page).match(/(已开|已领|明日|每日宝箱)[^。]{0,30}/)?.[0] || '今日无可开宝箱';
+    return R(await this.req(`chestsOpen.do?chestsId=${queryValue(chestHref, 'chestsId')}`));
   }
   async practice() { return R(await this.req('practiceMess.do')); }         // 修炼
   async dig(digType = 2) { return R(await this.req(`areaDig.do?digType=${digType}`)); } // 搜寻/打怪
@@ -228,8 +232,11 @@ class GoldClient extends FarmClient {
     const seen = new Set();
     const areas = [];
     for (const html of tiers) {
-      for (const m of html.matchAll(/([一-龥Ａ-ｚA-Za-z0-9\-]+)\((\d+)级\)<a href="areaDig\.do\?id=(\d+)"/g)) {
-        const id = +m[3];
+      for (const { href, index } of actionLinkEntries(html, 'areaDig')) {
+        const id = Number(queryValue(href, 'id')) || 0;
+        const before = html.slice(Math.max(0, index - 160), index);
+        const m = before.match(/([一-龥Ａ-ｚA-Za-z0-9\-]+)\((\d+)级\)[\s\S]*$/);
+        if (!m || !id) continue;
         if (seen.has(id)) continue;
         seen.add(id);
         areas.push({ name: m[1], level: +m[2], mapId: id });

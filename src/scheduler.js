@@ -1,7 +1,7 @@
 // 事件驱动多任务调度器 + 全局并发负载均衡 + 每账号代理
 // 每账号有多个 job（farm / daily / pasture），各自 nextRun；
 // 全局 tick 扫描到期 job，受 maxConcurrent 限流地投入执行。
-const { FarmClient, sleep } = require('./client');
+const { FarmClient, sleep, queryValue, actionLinks } = require('./client');
 const { PastureClient, PetClient, GoldClient } = require('./plugins');
 const { farmSignin, groupSignin, qqSignin } = require('./signin');
 const msgFilter = require('./msgFilter');
@@ -334,9 +334,10 @@ async function runStealJob(id) {
     if (wl.has(String(f.uid))) { skipped++; continue; }
     for (const l of (await c.getFriendFarm(f.uid, 3)).filter((x) => x.canSteal)) {
       if (stolen >= cap) break;
-      const m = l.canSteal.replace(/&amp;/g, '&').match(/landId=(\d+)&tuid=(\d+)/);
-      if (!m) continue;
-      await c.steal(m[1], m[2]); stolen++;
+      const landId = queryValue(l.canSteal, 'landId');
+      const tuid = queryValue(l.canSteal, 'tuid');
+      if (!landId || !tuid) continue;
+      await c.steal(landId, tuid); stolen++;
       await sleep(100 + Math.random() * 200);
     }
   }
@@ -388,8 +389,7 @@ async function runCareJob(id) {
       for (let i = 0; i < 100 && link && n < cap; i++) {
         const html = await pc.req(link);
         n++;
-        const next = html.match(/water\.do\?landId=\d+&(?:amp;)?tuid=\d+/);
-        link = next ? fix(next[0]) : null;
+        link = actionLinks(html, 'water').find((href) => queryValue(href, 'landId') && queryValue(href, 'tuid')) || null;
         if (link) await sleep(100 + Math.random() * 200);
       }
     }

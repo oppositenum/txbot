@@ -35,7 +35,7 @@ function isolatedCareScheduler(account, handlers = {}) {
     require(name) {
       const mocks = {
         './store': store,
-        './client': { FarmClient: MockFarmClient, sleep: async () => {} },
+        './client': { FarmClient: MockFarmClient, sleep: async () => {}, actionLinks: () => [] },
         './plugins': {},
         './signin': {},
         './msgFilter': {},

@@ -241,13 +241,22 @@ class FarmClient {
       const t = strip(b);
       const head = t.match(/(黑?土地)\s*(\d+)\s*[:：]\s*(?:\(([^)]*)\))?/);
       if (!head) continue;
+      // 网站会把会话参数 z 放在 landId 前面，并以 HTML 实体编码连接符；
+      // 不能假设 landId 紧跟在问号后面，否则页面显示可收割但调度器会漏判。
+      const href = (name) => {
+        const raw = (b.match(new RegExp(`${name}\\.do\\?[^"'<>\\s]+`)) || [])[0];
+        return raw ? raw.replace(/&amp;/g, '&') : null;
+      };
+      const harvestHref = href('harvest');
+      const landHref = ['harvest', 'upLandInfo', 'water', 'steal'].map(href).find(Boolean) || null;
+      const landId = Number(new URLSearchParams(landHref?.split('?')[1] || '').get('landId')) || null;
       const land = {
         pos: +head[2],
         black: head[1] === '黑土地',
         crop: head[3] || null,
         star: +(t.match(/(\d+)星/) || [])[1] || 0,
-        landId: +(b.match(/(?:harvest|upLandInfo|water|steal)\.do\?landId=(\d+)/) || [])[1] || null,
-        mature: /harvest\.do|steal\.do/.test(b),
+        landId,
+        mature: !!harvestHref || /steal\.do/.test(b),
         matureIn: (t.match(/(\d+小时)?(\d+分钟)?后成熟/) || [])[0] || null,
         yield: (t.match(/产[\d+]+\/剩\d+/) || [])[0] || null,
         empty: /空地/.test(t),
@@ -255,7 +264,7 @@ class FarmClient {
         needWeed: (b.match(/weeding\.do\?landId=\d+[^"']*/) || [])[0] || null,
         needKill: (b.match(/killInsect\w*\.do\?landId=\d+[^"']*/) || [])[0] || null,
         canSteal: (b.match(/steal\.do\?landId=\d+&(?:amp;)?tuid=\d+/) || [])[0] || null,
-        canHarvest: (b.match(/harvest\.do\?landId=\d+/) || [])[0] || null,
+        canHarvest: landId && harvestHref ? harvestHref : null,
       };
       lands.push(land);
     }

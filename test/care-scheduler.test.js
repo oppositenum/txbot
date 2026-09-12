@@ -75,6 +75,17 @@ test('护理排行榜兼容uid前的动态查询参数', async () => {
   assert.equal(result.maxPage, 2);
 });
 
+test('农场收割链接兼容z参数在landId前且HTML实体编码', () => {
+  const html = `
+    <strong>黑土地1:</strong>(水晶兰)(0星)
+    <a href="harvest.do?z=session-token&amp;landId=123456">收割</a>
+  `;
+  const [land] = FarmClient.parseLands(html);
+  assert.equal(land.mature, true);
+  assert.equal(land.landId, 123456);
+  assert.equal(land.canHarvest, 'harvest.do?z=session-token&landId=123456');
+});
+
 test('好友护理不受自家浇水除草杀虫开关限制', async () => {
   const target = account();
   const fixture = isolatedCareScheduler(target, {

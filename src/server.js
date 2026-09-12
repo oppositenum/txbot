@@ -85,6 +85,15 @@ app.post('/api/apply-proxy', (req, res) => {
 // ---- 账号管理 ----
 app.get('/api/accounts', (req, res) => res.json(store.list().map(pub)));
 
+// 一键启停全部账号。只处理状态确实需要变化的账号，避免重置已运行账号的排期。
+app.post('/api/accounts/bulk-enabled', (req, res) => {
+  const { enabled } = req.body || {};
+  if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled 必须是布尔值' });
+  const targets = store.list().filter((account) => account.config.enabled !== enabled);
+  for (const account of targets) enabled ? sched.start(account.id) : sched.stop(account.id);
+  res.json({ ok: true, enabled, affected: targets.length, total: store.list().length });
+});
+
 app.get('/api/accounts/export', (req, res) => {
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   res.set('Cache-Control', 'no-store');

@@ -307,7 +307,7 @@ class FarmClient {
   // 偷菜/护理排行 rank.do?oper=0偷|1草|2虫|3水 单页 → {friends:[{uid,name,rank}], maxPage}
   async getRank(oper = 0, pn = 1) {
     const html = await this.req(pn > 1 ? `rank.do?oper=${oper}&order=2&pn=${pn}` : `rank.do?oper=${oper}`);
-    const friends = [...html.matchAll(/(\d+)\.\s*([^<:：]{1,25})[:：][\s\S]{0,200}?\/plugins\/farm\/index\.do\?uid=(\d+)/g)]
+    const friends = [...html.matchAll(/(\d+)\.\s*([^<:：]{1,25})[:：][\s\S]{0,200}?\/plugins\/farm\/index\.do\?[^"'<>]*?\buid=(\d+)/g)]
       .map((m) => ({ rank: +m[1], name: m[2].trim(), uid: +m[3] }));
     const pageNums = [...html.matchAll(/rank\.do\?[^"']*?pn=(\d+)/g)].map((m) => +m[1]);
     const maxPage = pageNums.length ? Math.max(pn, ...pageNums) : pn;

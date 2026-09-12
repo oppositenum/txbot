@@ -287,7 +287,7 @@ module.exports = {
     const acc = this.get(id);
     if (!acc) return null;
     if (patch.name !== undefined) acc.name = patch.name;
-    if (patch.cookie !== undefined) { acc.cookie = patch.cookie; acc.status.needLogin = false; }
+    if (patch.cookie !== undefined) { acc.cookie = patch.cookie; acc.status.needLogin = false; acc.status.nextLoginRetryAt = null; }
     if (patch.useruid !== undefined) acc.useruid = patch.useruid;
     if (patch.password !== undefined) acc.password = patch.password;
     if (patch.proxy !== undefined) acc.proxy = patch.proxy || null;

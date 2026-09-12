@@ -44,7 +44,7 @@ async function relogin(id) {
   const cookie = await c.login(acc.useruid, acc.password);
   clients[id] = c;
   store.update(id, { cookie });
-  store.setStatus(id, { needLogin: false });
+  store.setStatus(id, { needLogin: false, nextLoginRetryAt: null });
   log(id, '✅ 自动登录成功，Cookie 已更新');
   return true;
 }
@@ -358,7 +358,9 @@ async function runCareJob(id) {
     let n = 0;
     for (const f of await pc.getRankAll(oper, 15)) {
       if (n >= cap) break;
-      for (const l of await pc.getFriendFarm(f.uid, 3)) {
+      // 好友土地每页只有少量地块，护理入口可能在第4页以后；必须完整翻页，
+      // 否则排行榜明明提示可护理，前3页没命中时却会误报“暂无”。
+      for (const l of await pc.getFriendFarm(f.uid, 20)) {
         if (n >= cap) break;
         const link = l[needKey];
         if (!link) continue;
@@ -380,7 +382,7 @@ async function runCareJob(id) {
     let n = 0;
     for (const f of await pc.getRankAll(oper, 15)) {
       if (n >= cap) break;
-      const firstLand = (await pc.getFriendFarm(f.uid, 3)).find((l) => l.needWater); // 翻页找入口(有的好友地块很多，第一页未必有)
+      const firstLand = (await pc.getFriendFarm(f.uid, 20)).find((l) => l.needWater);
       if (!firstLand) continue;
       let link = fix(firstLand.needWater);
       for (let i = 0; i < 100 && link && n < cap; i++) {
@@ -394,13 +396,25 @@ async function runCareJob(id) {
     return n;
   };
 
-  const tasks = [];
-  if (cfg.water) tasks.push(runWaterPass(3).then((n) => ['浇水', n]));
-  if (cfg.weed) tasks.push(runRepeatPass(1, 'needWeed', WEED_DONE).then((n) => ['除草', n]));
-  if (cfg.kill) tasks.push(runRepeatPass(2, 'needKill', KILL_DONE).then((n) => ['杀虫', n]));
-  const done = (await Promise.allSettled(tasks)).filter((r) => r.status === 'fulfilled').map((r) => r.value);
+  // careFriends 是独立的好友护理开关；water/weed/kill 只控制自家土地，不能在这里复用。
+  const tasks = [
+    ['浇水', () => runWaterPass(3)],
+    ['除草', () => runRepeatPass(1, 'needWeed', WEED_DONE)],
+    ['杀虫', () => runRepeatPass(2, 'needKill', KILL_DONE)],
+  ];
+  const settled = await Promise.allSettled(tasks.map(([label, run]) => run().then((n) => [label, n])));
+  const done = settled.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+  const failed = settled.flatMap((result, index) => result.status === 'rejected' ? [{ label: tasks[index][0], reason: result.reason }] : []);
   const total = done.reduce((s, [, n]) => s + n, 0);
-  log(id, total ? '帮好友(并发): ' + done.map(([l, n]) => l + n).join(' ') : '帮好友巡检: 暂无好友需要护理');
+  if (total) log(id, '帮好友(并发): ' + done.map(([l, n]) => l + n).join(' '));
+  if (failed.length) {
+    const detail = failed.map(({ label, reason }) => `${label}: ${String(reason?.message || reason).slice(0, 120)}`).join('；');
+    log(id, `${total ? '帮好友部分检查失败' : '帮好友巡检失败'}: ${detail}`);
+    const error = new Error(`好友护理检查失败: ${detail}`);
+    if (failed.every(({ reason }) => reason?.code === 'NOT_LOGGED_IN')) error.code = 'NOT_LOGGED_IN';
+    throw error;
+  }
+  if (!total) log(id, '帮好友巡检: 已检查浇水/除草/杀虫，暂无好友需要护理');
   setJob(id, 'care', pollNext(cfg));
 }
 
@@ -645,11 +659,16 @@ async function runJob(id, type, retried = false) {
   const key = `${id}:${type}`;       // 账号+任务类型级锁：同账号不同任务可并行
   running.add(key); activeCount++;
   store.setStatus(id, { state: 'running' });
-  let c = getClient(acc);
-  if (acc.status.needLogin && acc.useruid && acc.password) {
-    try { await relogin(id); c = getClient(store.get(id)); } catch (e) { log(id, '重登失败: ' + e.message); }
-  }
   try {
+    let c = getClient(acc);
+    if (type === 'relogin') {
+      await relogin(id);
+      store.setStatus(id, { state: 'idle' });
+      return;
+    }
+    if (acc.status.needLogin && acc.useruid && acc.password) {
+      try { await relogin(id); c = getClient(store.get(id)); } catch (e) { log(id, '重登失败: ' + e.message); }
+    }
     const task = (async () => {
       if (type === 'farm') await runFarmJob(id, c);
       else if (type === 'friendland') await runFriendLandJob(id);
@@ -674,6 +693,12 @@ async function runJob(id, type, retried = false) {
     await Promise.race([task, timeout]);
     store.setStatus(id, { state: 'idle' });
   } catch (e) {
+    if (type === 'relogin') {
+      const nextLoginRetryAt = Date.now() + jitter(10 * 60000);
+      store.setStatus(id, { state: 'error', needLogin: true, nextLoginRetryAt, lastResult: '自动登录失败: ' + e.message });
+      log(id, `❌ 自动登录失败: ${e.message}，约10分钟后重试`);
+      return;
+    }
     if (e.code === 'JOB_TIMEOUT') {
       log(id, `❌ ${e.message}，强制重新排期`);
       store.setStatus(id, { state: 'error', lastResult: `${type}执行超时` });
@@ -682,16 +707,17 @@ async function runJob(id, type, retried = false) {
       return; // finally 仍会执行，释放锁
     }
     if (e.code === 'NOT_LOGGED_IN' && acc.useruid && acc.password && !retried) {
-      running.delete(key); activeCount--;
       try { await relogin(id); } catch (le) {
-        store.setStatus(id, { state: 'error', needLogin: true, lastResult: '自动登录失败: ' + le.message });
-        log(id, '❌ 自动登录失败: ' + le.message);
+        const nextLoginRetryAt = Date.now() + jitter(10 * 60000);
+        store.setStatus(id, { state: 'error', needLogin: true, nextLoginRetryAt, lastResult: '自动登录失败: ' + le.message });
+        log(id, `❌ 自动登录失败: ${le.message}，约10分钟后重试`);
         return;
       }
       return runJob(id, type, true);
     }
     if (e.code === 'NOT_LOGGED_IN') {
-      store.setStatus(id, { state: 'error', needLogin: true, lastResult: 'Cookie失效，请重登或配账密' });
+      const nextLoginRetryAt = acc.useruid && acc.password ? Date.now() + jitter(10 * 60000) : null;
+      store.setStatus(id, { state: 'error', needLogin: true, nextLoginRetryAt, lastResult: 'Cookie失效，请重登或配账密' });
       log(id, '❌ Cookie失效');
     } else {
       store.setStatus(id, { state: 'error', lastResult: '错误: ' + e.message });
@@ -712,7 +738,15 @@ function tick() {
   // 收集到期 job
   const due = [];
   for (const acc of store.list()) {
-    if (!acc.config.enabled || acc.status.needLogin) continue;
+    if (!acc.config.enabled) continue;
+    if (acc.status.needLogin) {
+      // 登录失效时暂停普通任务；有账密的账号进入独立重登队列，失败后按 nextLoginRetryAt 退避。
+      const retryAt = acc.status.nextLoginRetryAt || 0;
+      if (acc.useruid && acc.password && retryAt <= now && !running.has(`${acc.id}:relogin`)) {
+        due.push({ id: acc.id, type: 'relogin', nr: retryAt });
+      }
+      continue;
+    }
     const jobs = acc.status.jobs || {};
     let dirty = false;
     for (const type of ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pasturefeed', 'pioneer', 'pettrain', 'goldfight', 'msgwatch']) {

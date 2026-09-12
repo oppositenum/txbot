@@ -104,6 +104,20 @@ test('账密账号和相同txuid的Cookie账号识别为同一账号', () => {
   }
 });
 
+test('更新Cookie会清除登录失效和旧的自动重试排期', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'txbot-cookie-refresh-'));
+  try {
+    const store = isolatedStore(dir);
+    const account = store.add({ name: '账号A', cookie: 'JSESSIONID=old; txuid=10001' });
+    store.setStatus(account.id, { needLogin: true, nextLoginRetryAt: Date.now() + 600000 });
+    store.update(account.id, { cookie: 'JSESSIONID=new; txuid=10001' });
+    assert.equal(account.status.needLogin, false);
+    assert.equal(account.status.nextLoginRetryAt, null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('旧迁移包的grabWindowMin已废弃但不会阻断导入', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'txbot-legacy-import-'));
   try {

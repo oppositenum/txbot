@@ -203,6 +203,8 @@ class PetClient extends FarmClient {
 
 // ===================== 黄金圣衣 =====================
 class GoldClient extends FarmClient {
+  static MAX_FIGHT_LEVEL = 29;
+
   constructor(cookie, opts) { super(cookie, opts); this.base = 'https://tx.com.cn/plugins/gold/cs/'; }
 
   async getInfo() {
@@ -262,12 +264,13 @@ class GoldClient extends FarmClient {
     return targets;
   }
 
-  // 汇总所有"进入等级 <= maxLevel"的地图，找出当前等级<=maxLevel且存活可攻击的boss
+  // 汇总所有符合等级限制的普通敌人；等级上限固定为29，调用方只能进一步收紧。
   // 公会地图(需占领该区域的公会成员身份才能打，个人打不了；来自玩家攻略帖确认)
   static GUILD_MAP_IDS = new Set([28, 31]); // 圣殿花园、神域保卫战
 
   // 返回该等级范围内全部普通敌人；按敌人自身等级过滤，带★的 Boss 始终排除。
   async getFightStatus(maxLevel = 29) {
+    maxLevel = Math.min(GoldClient.MAX_FIGHT_LEVEL, Math.max(1, Number(maxLevel) || GoldClient.MAX_FIGHT_LEVEL));
     const areas = (await this.getAreaList()).filter((a) => a.level <= maxLevel && !GoldClient.GUILD_MAP_IDS.has(a.mapId));
     const results = await Promise.all(areas.map((a) => this.getAreaBosses(a.mapId).catch(() => [])));
     const targets = [];

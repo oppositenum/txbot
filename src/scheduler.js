@@ -251,7 +251,7 @@ const pollNext = (cfg) => Date.now() + jitter(Math.max(1, cfg.farmPollMaxMin || 
 async function runGoldFightJob(id) {
   const acc = store.get(id); const cfg = acc.config;
   const g = new GoldClient(acc.cookie, { proxy: acc.proxy });
-  const maxLv = cfg.goldFightMaxLevel || 29;
+  const maxLv = Math.min(29, Math.max(1, Number(cfg.goldFightMaxLevel) || 29));
   const cap = Math.max(1, cfg.goldFightPollMaxMin || 5) * 60;
   let targets;
   try { targets = await g.getFightStatus(maxLv); }

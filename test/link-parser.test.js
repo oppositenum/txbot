@@ -82,6 +82,8 @@ test('圣衣只解析普通敌人，按敌人等级过滤并排除带★的Boss'
   gold.getAreaList = async () => [{ name: '神圣堡垒', level: 24, mapId: 21 }];
   const targets = await gold.getFightStatus(29);
   assert.deepEqual(targets.map(({ name, level, enemyId }) => ({ name, level, enemyId })), [{ name: '金刚傀儡', level: 27, enemyId: 19 }]);
+  const capped = await gold.getFightStatus(35);
+  assert.deepEqual(capped.map(({ name, level, enemyId }) => ({ name, level, enemyId })), [{ name: '金刚傀儡', level: 27, enemyId: 19 }]);
 });
 
 test('圣衣普通敌人使用fightingEnemy接口', async () => {

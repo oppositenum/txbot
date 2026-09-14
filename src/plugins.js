@@ -59,8 +59,8 @@ class PastureClient extends FarmClient {
     const html = await this.req('myFemales.do?oneKey=oneKey');
     return actionLinkEntries(html, /oneKeyFeedAnimal|feed/).flatMap(({ href, index }) => {
       const femaleid = Number(queryValue(href, 'femaleid')) || 0;
-      const before = html.slice(Math.max(0, index - 140), index);
-      const m = before.match(/([一-龥A-Za-z0-9]+)\((\d+)\)[\s\S]*$/);
+      const before = strip(html.slice(Math.max(0, index - 140), index).replace(/<[^>]*$/, '')).trim();
+      const m = before.match(/([^\s()<>]+)\((\d+)\)\s*$/);
       return femaleid && m ? [{ name: m[1], count: +m[2], femaleid }] : [];
     });
   }

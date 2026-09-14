@@ -41,6 +41,21 @@ test('牧场和圣衣链接解析支持动态z参数', async () => {
   assert.deepEqual(await gold.getAreaList(), [{ name: '新手试练场', level: 0, mapId: 3 }]);
 });
 
+test('牧场幼仔库存可解析oneKeyFeedAnimal链接并用于补栏', async () => {
+  const pasture = new PastureClient('');
+  const requests = [];
+  pasture.req = async (path) => {
+    requests.push(path);
+    if (path.startsWith('myFemales.do')) return '母鸡(10)<a href="oneKeyFeedAnimal.do?z=t&amp;femaleid=1&amp;">[饲养]</a><br/>大象(2)<a href="oneKeyFeedAnimal.do?z=t&amp;femaleid=6&amp;">[饲养]</a>';
+    if (path === 'index.do') return '<a href="myFemales.do?z=t&amp;id=8">补栏</a>';
+    return '饲养成功';
+  };
+  assert.deepEqual(await pasture.getBabies(), [{ name: '母鸡', count: 10, femaleid: 1 }, { name: '大象', count: 2, femaleid: 6 }]);
+  const result = await pasture.restockAll();
+  assert.deepEqual(result, { n: 1, name: '母鸡' });
+  assert.deepEqual(requests, ['myFemales.do?oneKey=oneKey', 'index.do', 'myFemales.do?oneKey=oneKey', 'feed.do?femaleid=1&fcorralid=8&pn=0']);
+});
+
 test('宠物劳动收获链接支持动态z参数', async () => {
   const pet = new PetClient('');
   pet.req = async () => '<a href="harvest.do?z=t&amp;tpi=0&amp;ht=1&amp;gid=2&amp;pp=3">收获</a>';

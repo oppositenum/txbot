@@ -14,7 +14,7 @@ const strip = (h) =>
 const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const actionLinkEntries = (html, action) => {
   const pattern = action instanceof RegExp ? action.source : escapeRegExp(action);
-  const re = new RegExp(`${pattern}\\.do\\?[^"'<>\\s]+`, 'g');
+  const re = new RegExp(`(?:${pattern})\\.do\\?[^"'<>\\s]+`, 'g');
   return [...String(html).matchAll(re)].map((m) => ({ href: m[0].replace(/&amp;/g, '&'), index: m.index }));
 };
 const actionLinks = (html, action) => actionLinkEntries(html, action).map(({ href }) => href);

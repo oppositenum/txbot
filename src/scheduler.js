@@ -555,11 +555,12 @@ async function runPastureFeedJob(id, c) {
   const p = new PastureClient(c.jar, { proxy: acc.proxy });
   const info = await p.getInfo();
   if (info.dogHungry) await p.feedDog();
+  const restocked = await p.restockAll();
   const { fed, bought } = await p.feedAnimals();
   // 回写 needFeed，否则 UI 的"待喂食"角标会一直停留在喂食前读到的旧数字
   const info2 = fed ? await p.getInfo() : info;
   store.setStatus(id, { pastureInfo: { ...(acc.status.pastureInfo || {}), needFeed: info2.needFeed } });
-  log(id, `${fed ? `牧场喂食: ${fed}只` : '牧场巡检: 暂无待喂食动物'}${bought ? '(食料不足已自动购买开心牧草x50)' : ''}`);
+  log(id, `${restocked.n ? `牧场补栏: ${restocked.n}圈舍${restocked.name ? '×' + restocked.name : ''}；` : ''}${fed ? `牧场喂食: ${fed}只` : '牧场巡检: 暂无待喂食动物'}${bought ? '(食料不足已自动购买开心牧草x50)' : ''}`);
   const next = Date.now() + jitter((cfg.pastureFeedIntervalMin || 210) * 60000);
   setJob(id, 'pasturefeed', next);
 }

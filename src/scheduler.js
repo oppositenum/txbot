@@ -253,29 +253,29 @@ async function runGoldFightJob(id) {
   const g = new GoldClient(acc.cookie, { proxy: acc.proxy });
   const maxLv = cfg.goldFightMaxLevel || 29;
   const cap = Math.max(1, cfg.goldFightPollMaxMin || 5) * 60;
-  let bosses;
-  try { bosses = await g.getFightStatus(maxLv); }
+  let targets;
+  try { targets = await g.getFightStatus(maxLv); }
   catch (e) {
     log(id, `圣衣打怪巡检出错: ${e.message}，${Math.round(cap / 60)}分钟后重试`);
     setJob(id, 'goldfight', Date.now() + jitter(cap * 1000));
     return;
   }
   let killed = 0;
-  for (const b of bosses.filter((x) => x.available)) {
-    const r = await g.fightBoss(b.mapId, b.bossId);
+  for (const b of targets.filter((x) => x.available)) {
+    const r = await g.fightEnemy(b.mapId, b.enemyId);
     if (r.ok) { killed++; log(id, `圣衣打怪[${b.areaName}]${b.name}(Lv${b.level}): 胜利`); }
     else log(id, `圣衣打怪[${b.areaName}]${b.name}(Lv${b.level})未打成: ${r.reason}`);
     await sleep(600 + Math.random() * 600);
   }
   // 按最近的怪物冷却剩余时间精确唤醒，封顶 goldFightPollMaxMin
-  const cooling = bosses.filter((b) => !b.available && b.respawnSec != null).map((b) => b.respawnSec);
+  const cooling = targets.filter((b) => !b.available && b.respawnSec != null).map((b) => b.respawnSec);
   const waitSec = cooling.length ? Math.min(cap, Math.max(20, Math.min(...cooling) + 3)) : cap;
   const next = Date.now() + jitter(waitSec * 1000, 0.1);
   setJob(id, 'goldfight', next);
   // 每次巡检都留痕（哪怕没打到），否则用户看不到任务在运行的证据
   const nextStr = new Date(next).toLocaleTimeString();
-  if (killed) log(id, `圣衣打怪完成，击杀${killed}只(候选${bosses.length}只)；下次 ${nextStr}`);
-  else log(id, `圣衣打怪巡检: ${bosses.length}只候选怪均在冷却，最近${cooling.length ? Math.ceil(Math.min(...cooling) / 60) + '分钟' : '未知'}后刷新；下次 ${nextStr}`);
+  if (killed) log(id, `圣衣打怪完成，击杀${killed}只(候选${targets.length}只)；下次 ${nextStr}`);
+  else log(id, `圣衣打怪巡检: ${targets.length}只候选怪均在冷却，最近${cooling.length ? Math.ceil(Math.min(...cooling) / 60) + '分钟' : '未知'}后刷新；下次 ${nextStr}`);
 }
 
 // ==================== friendland job（我的友情地，独立并发）====================

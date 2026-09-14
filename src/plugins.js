@@ -245,39 +245,36 @@ class GoldClient extends FarmClient {
     return areas;
   }
 
-  // 某地图当前的 boss 状态：[{name, level, mapId, bossId(null=冷却中), available, respawnSec}]
+  // 某地图当前可挑战的普通敌人：[{name, level, mapId, enemyId, available}]
   async getAreaBosses(mapId) {
     const html = await this.req(`areaDig.do?id=${mapId}&digType=5`);
-    const blocks = html.split(/(?=★[一-龥]+\(\d+级\))/).slice(1);
-    const bosses = [];
-    for (const b of blocks) {
-      const m = b.match(/★([一-龥]+)\((\d+)级\)/);
-      if (!m) continue;
-      const bossIdM = b.match(/name="bossId"\s+value="(\d+)"/);
-      const cd = strip(b).match(/(\d+)分钟(\d+)秒后复活|(\d+)秒后复活/);
-      bosses.push({
-        name: m[1], level: +m[2], mapId,
-        bossId: bossIdM ? +bossIdM[1] : null,
-        available: !!bossIdM,
-        respawnSec: cd ? (cd[1] ? (+cd[1] * 60 + +cd[2]) : +cd[3]) : null,
-      });
+    const targets = [];
+    for (const { href, index } of actionLinkEntries(html, 'fightingEnemy')) {
+      const formEnd = html.indexOf('</form>', index);
+      const form = html.slice(index, formEnd >= 0 ? formEnd + 7 : index + 500);
+      const enemyId = Number((form.match(/name=["']enemyId["']\s+value=["'](\d+)["']/i) || [])[1]) || Number(queryValue(href, 'enemyId')) || 0;
+      const formMapId = Number((form.match(/name=["']mapId["']\s+value=["'](\d+)["']/i) || [])[1]) || Number(queryValue(href, 'mapId')) || mapId;
+      const before = strip(html.slice(Math.max(0, index - 160), index).replace(/<[^>]*$/, ''));
+      const m = before.match(/([^\s()<>]+)\((\d+)级\)\s*$/);
+      if (!m || !enemyId || m[1].includes('★')) continue;
+      targets.push({ name: m[1], level: +m[2], mapId: formMapId, enemyId, bossId: null, targetType: 'enemy', available: true, respawnSec: null });
     }
-    return bosses;
+    return targets;
   }
 
   // 汇总所有"进入等级 <= maxLevel"的地图，找出当前等级<=maxLevel且存活可攻击的boss
   // 公会地图(需占领该区域的公会成员身份才能打，个人打不了；来自玩家攻略帖确认)
   static GUILD_MAP_IDS = new Set([28, 31]); // 圣殿花园、神域保卫战
 
-  // 返回该等级范围内全部 boss(含冷却中的，供调度器算下次唤醒时间)
-  // 按地图入场门槛(<=maxLevel)筛选地图；地图内所有怪都打，不再额外按怪物自身等级过滤
-  // (同一地图常混有远超入场门槛的怪，例如"陽-末日试炼"入场29级但内有30/32级的怪，也要打)
+  // 返回该等级范围内全部普通敌人；按敌人自身等级过滤，带★的 Boss 始终排除。
   async getFightStatus(maxLevel = 29) {
     const areas = (await this.getAreaList()).filter((a) => a.level <= maxLevel && !GoldClient.GUILD_MAP_IDS.has(a.mapId));
     const results = await Promise.all(areas.map((a) => this.getAreaBosses(a.mapId).catch(() => [])));
-    const bosses = [];
-    results.forEach((list, i) => { for (const b of list) bosses.push({ ...b, areaName: areas[i].name }); });
-    return bosses;
+    const targets = [];
+    results.forEach((list, i) => { for (const target of list) {
+      if (target.level <= maxLevel && !target.name.includes('★')) targets.push({ ...target, areaName: areas[i].name });
+    } });
+    return targets;
   }
 
   async getFightTargets(maxLevel = 29) {
@@ -292,6 +289,18 @@ class GoldClient extends FarmClient {
     const text = (i >= 0 ? t.slice(i, i + 200) : t.slice(0, 150)).trim();
     if (/等级过高/.test(text)) return { ok: false, reason: '等级过高不能进入', text };
     if (/不是.*公会成员|公会/.test(text)) return { ok: false, reason: '非占领公会成员', text };
+    if (/体力不足/.test(text)) return { ok: false, reason: '体力不足', text };
+    if (/胜利|获得|击败|击杀/.test(text)) return { ok: true, reason: '战斗胜利', text };
+    return { ok: false, reason: '未知结果', text };
+  }
+
+  // 普通敌人使用 fightingEnemy.do；带★的 Boss 不走此入口。
+  async fightEnemy(mapId, enemyId) {
+    const html = await this.req('fightingEnemy.do', { method: 'POST', body: `mapId=${mapId}&enemyId=${enemyId}` });
+    const t = strip(html);
+    const i = t.search(/战斗|胜利|失败|获得|挑战/);
+    const text = (i >= 0 ? t.slice(i, i + 200) : t.slice(0, 150)).trim();
+    if (/等级过高/.test(text)) return { ok: false, reason: '等级过高不能进入', text };
     if (/体力不足/.test(text)) return { ok: false, reason: '体力不足', text };
     if (/胜利|获得|击败|击杀/.test(text)) return { ok: true, reason: '战斗胜利', text };
     return { ok: false, reason: '未知结果', text };

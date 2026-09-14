@@ -349,7 +349,7 @@ const PLUGIN_ACTIONS = {
       const targets = await c.getFightTargets(p.maxLevel || 29);
       if (!targets.length) return '当前无可打的怪(都在冷却中)';
       const results = [];
-      for (const t of targets) { const r = await c.fightBoss(t.mapId, t.bossId); results.push(`${t.name}(Lv${t.level}):${r.ok ? '胜利' : r.reason}`); }
+      for (const t of targets) { const r = await c.fightEnemy(t.mapId, t.enemyId); results.push(`${t.name}(Lv${t.level}):${r.ok ? '胜利' : r.reason}`); }
       return results.join(' / ');
     } },
 };

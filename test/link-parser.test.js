@@ -65,3 +65,30 @@ test('好友土地和留言链接支持动态z参数', async () => {
   ]);
   assert.deepEqual(await client.getMessagePage(), [71]);
 });
+
+test('圣衣只解析普通敌人，按敌人等级过滤并排除带★的Boss', async () => {
+  const gold = new GoldClient('');
+  const areaHtml = `
+    金刚傀儡(27级)<form action="fightingEnemy.do?z=t" method="post"><input type="hidden" name="mapId" value="21"><input type="hidden" name="enemyId" value="19"></form>
+    铁甲骑士(30级)<form action="fightingEnemy.do?z=t" method="post"><input type="hidden" name="mapId" value="21"><input type="hidden" name="enemyId" value="21"></form>
+    ★恶魔圣者(25级)<form action="fightingBoss.do?z=t" method="post"><input type="hidden" name="mapId" value="21"><input type="hidden" name="bossId" value="30"></form>
+  `;
+  gold.req = async () => areaHtml;
+  const all = await gold.getAreaBosses(21);
+  assert.deepEqual(all.map(({ name, level, enemyId, targetType }) => ({ name, level, enemyId, targetType })), [
+    { name: '金刚傀儡', level: 27, enemyId: 19, targetType: 'enemy' },
+    { name: '铁甲骑士', level: 30, enemyId: 21, targetType: 'enemy' },
+  ]);
+  gold.getAreaList = async () => [{ name: '神圣堡垒', level: 24, mapId: 21 }];
+  const targets = await gold.getFightStatus(29);
+  assert.deepEqual(targets.map(({ name, level, enemyId }) => ({ name, level, enemyId })), [{ name: '金刚傀儡', level: 27, enemyId: 19 }]);
+});
+
+test('圣衣普通敌人使用fightingEnemy接口', async () => {
+  const gold = new GoldClient('');
+  let request;
+  gold.req = async (path, options) => { request = { path, options }; return '战斗胜利 获得经验'; };
+  const result = await gold.fightEnemy(21, 19);
+  assert.equal(result.ok, true);
+  assert.deepEqual(request, { path: 'fightingEnemy.do', options: { method: 'POST', body: 'mapId=21&enemyId=19' } });
+});

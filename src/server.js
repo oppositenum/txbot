@@ -226,6 +226,8 @@ app.put('/api/accounts/:id', (req, res) => {
   // enabled 开关联动调度
   if (req.body.config && 'enabled' in req.body.config) {
     req.body.config.enabled ? sched.start(acc.id) : sched.stop(acc.id);
+  } else if (req.body.config && ['pastureLoop', 'pastureFeed', 'pastureIntervalMin', 'pastureFeedIntervalMin'].some((key) => key in req.body.config)) {
+    sched.reschedulePasture(acc.id);
   }
   res.json(pub(acc));
 });

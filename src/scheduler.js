@@ -811,6 +811,19 @@ function stop(id) {
   store.setStatus(id, { state: 'idle' });
 }
 
+// 牧场节奏配置保存后立即重排相关任务，避免用户修改间隔后仍等待旧排期。
+function reschedulePasture(id) {
+  const acc = store.get(id);
+  if (!acc || !acc.config.enabled || acc.status.needLogin) return;
+  const jobs = { ...(acc.status.jobs || {}) };
+  if (acc.config.pastureLoop) jobs.pasture = Date.now() + Math.random() * 30000;
+  else delete jobs.pasture;
+  if (acc.config.pastureFeed) jobs.pasturefeed = Date.now() + Math.random() * 30000;
+  else delete jobs.pasturefeed;
+  store.setStatus(id, { jobs });
+  startLoop();
+}
+
 // 立即执行一次（手动）：farm + 到期的 daily（各自按类型锁，可与其他任务并行）
 async function runCycle(id, manual = true) {
   const acc = store.get(id);
@@ -865,4 +878,4 @@ async function cleanMsgPending(id, ids) {
   return { deleted, failed };
 }
 
-module.exports = { grabOnce: id => grabScheduler.once(id), recordDailyResult, runCycle, start, stop, resume, resetClient, getClient, relogin, logs, log, cleanMsgPending };
+module.exports = { grabOnce: id => grabScheduler.once(id), recordDailyResult, runCycle, start, stop, reschedulePasture, resume, resetClient, getClient, relogin, logs, log, cleanMsgPending };

@@ -256,10 +256,15 @@ class GoldClient extends FarmClient {
       const form = html.slice(index, formEnd >= 0 ? formEnd + 7 : index + 500);
       const enemyId = Number((form.match(/name=["']enemyId["']\s+value=["'](\d+)["']/i) || [])[1]) || Number(queryValue(href, 'enemyId')) || 0;
       const formMapId = Number((form.match(/name=["']mapId["']\s+value=["'](\d+)["']/i) || [])[1]) || Number(queryValue(href, 'mapId')) || mapId;
-      const before = strip(html.slice(Math.max(0, index - 160), index).replace(/<[^>]*$/, ''));
-      const m = before.match(/([^\s()<>]+)\((\d+)级\)\s*$/);
+      const tagStart = html.lastIndexOf('<', index);
+      const tagEnd = html.indexOf('>', index);
+      const anchorEnd = tagEnd >= 0 ? html.indexOf('</a>', tagEnd) : -1;
+      const isAnchor = tagStart >= 0 && /^<a\b/i.test(html.slice(tagStart, index));
+      const after = isAnchor && tagEnd >= 0 ? strip(html.slice(tagEnd + 1, anchorEnd >= 0 ? anchorEnd : tagEnd + 160)).trim() : '';
+      const before = strip(html.slice(Math.max(0, index - 160), index).replace(/<[^>]*$/, '')).trim();
+      const m = after.match(/([^\s()<>]+)\((\d+)级\)/) || before.match(/([^\s()<>]+)\((\d+)级\)\s*$/);
       if (!m || !enemyId || m[1].includes('★')) continue;
-      targets.push({ name: m[1], level: +m[2], mapId: formMapId, enemyId, bossId: null, targetType: 'enemy', available: true, respawnSec: null });
+      targets.push({ name: m[1], level: +m[2], mapId: formMapId, enemyId, challengeHref: href, bossId: null, targetType: 'enemy', available: true, respawnSec: null });
     }
     return targets;
   }
@@ -297,16 +302,28 @@ class GoldClient extends FarmClient {
     return { ok: false, reason: '未知结果', text };
   }
 
-  // 普通敌人使用 fightingEnemy.do；带★的 Boss 不走此入口。
-  async fightEnemy(mapId, enemyId) {
-    const html = await this.req('fightingEnemy.do', { method: 'POST', body: `mapId=${mapId}&enemyId=${enemyId}` });
-    const t = strip(html);
-    const i = t.search(/战斗|胜利|失败|获得|挑战/);
-    const text = (i >= 0 ? t.slice(i, i + 200) : t.slice(0, 150)).trim();
-    if (/等级过高/.test(text)) return { ok: false, reason: '等级过高不能进入', text };
-    if (/体力不足/.test(text)) return { ok: false, reason: '体力不足', text };
-    if (/胜利|获得|击败|击杀/.test(text)) return { ok: true, reason: '战斗胜利', text };
-    return { ok: false, reason: '未知结果', text };
+  // 普通敌人先 GET 进入战斗页，再用页面生成的临时 fightEnemyId 攻击。
+  // 页面可能需要多轮攻击，直到返回胜负结果；带★的 Boss 不走此入口。
+  async fightEnemy(mapId, enemyId, challengeHref = null) {
+    const enterPath = challengeHref || `fightingEnemy.do?mapId=${mapId}&enemyId=${enemyId}`;
+    let html = await this.req(enterPath);
+    let lastText = '';
+    for (let round = 0; round < 30; round++) {
+      const rawHtml = String(html);
+      const t = strip(rawHtml).replace(/^\uFEFF/, '').trim();
+      lastText = t.slice(0, 400);
+      const fightEnemyId = Number((rawHtml.match(/name=["']fightEnemyId["']\s+value=["'](\d+)["']/i) || [])[1]) || 0;
+      if (/等级过高/.test(t)) return { ok: false, reason: '等级过高不能进入', text: lastText };
+      if (/体力不足|体力不够/.test(t)) return { ok: false, reason: '体力不足', text: lastText };
+      if (/已被.*击败|不存在|无法.*(挑战|战斗)|不能.*(挑战|战斗)/.test(t)) return { ok: false, reason: '目标当前不可挑战', text: lastText };
+      if (!fightEnemyId && /战斗胜利|胜利|战胜|击败|击杀|获得经验|获得铜币/.test(t)) return { ok: true, reason: '战斗胜利', text: lastText };
+      if (!fightEnemyId && /战斗失败|战败|失败/.test(t)) return { ok: false, reason: '战斗失败', text: lastText };
+      if (!fightEnemyId) return { ok: false, reason: '未知结果', text: lastText };
+      const nextHref = actionLinkEntries(html, 'fightingEnemy').map(({ href }) => href).find((href) => queryValue(href, 'z'));
+      const postPath = nextHref || `fightingEnemy.do?z=${this.z || ''}`;
+      html = await this.req(postPath, { method: 'POST', body: `fightEnemyId=${fightEnemyId}&fightMethod=2` });
+    }
+    return { ok: false, reason: '战斗轮次超限', text: lastText };
   }
 }
 

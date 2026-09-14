@@ -262,7 +262,7 @@ async function runGoldFightJob(id) {
   }
   let killed = 0;
   for (const b of targets.filter((x) => x.available)) {
-    const r = await g.fightEnemy(b.mapId, b.enemyId);
+    const r = await g.fightEnemy(b.mapId, b.enemyId, b.challengeHref);
     if (r.ok) { killed++; log(id, `圣衣打怪[${b.areaName}]${b.name}(Lv${b.level}): 胜利`); }
     else log(id, `圣衣打怪[${b.areaName}]${b.name}(Lv${b.level})未打成: ${r.reason}`);
     await sleep(600 + Math.random() * 600);

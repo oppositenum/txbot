@@ -86,11 +86,27 @@ test('圣衣只解析普通敌人，按敌人等级过滤并排除带★的Boss'
   assert.deepEqual(capped.map(({ name, level, enemyId }) => ({ name, level, enemyId })), [{ name: '金刚傀儡', level: 27, enemyId: 19 }]);
 });
 
+test('圣衣从真实链接文本读取敌人名称，不会与前一个目标错位', async () => {
+  const gold = new GoldClient('');
+  gold.req = async () => '<a href="fightingBoss.do?mapId=3&bossId=1">★首领(10级)</a><br/><a href="fightingEnemy.do?mapId=3&enemyId=11&z=t">幼狼(2级)</a><br/><a href="fightingEnemy.do?mapId=3&enemyId=10&z=t">地底鼠人(3级)</a>';
+  assert.deepEqual((await gold.getAreaBosses(3)).map(({ name, level, enemyId }) => ({ name, level, enemyId })), [
+    { name: '幼狼', level: 2, enemyId: 11 },
+    { name: '地底鼠人', level: 3, enemyId: 10 },
+  ]);
+});
+
 test('圣衣普通敌人使用fightingEnemy接口', async () => {
   const gold = new GoldClient('');
-  let request;
-  gold.req = async (path, options) => { request = { path, options }; return '战斗胜利 获得经验'; };
-  const result = await gold.fightEnemy(21, 19);
+  const requests = [];
+  gold.req = async (path, options) => {
+    requests.push({ path, options });
+    if (requests.length === 1) return '<wml><postfield name="fightEnemyId" value="351164535" /></wml>';
+    return '战斗胜利 获得经验';
+  };
+  const result = await gold.fightEnemy(21, 19, 'fightingEnemy.do?mapId=21&enemyId=19&z=t');
   assert.equal(result.ok, true);
-  assert.deepEqual(request, { path: 'fightingEnemy.do', options: { method: 'POST', body: 'mapId=21&enemyId=19' } });
+  assert.deepEqual(requests, [
+    { path: 'fightingEnemy.do?mapId=21&enemyId=19&z=t', options: undefined },
+    { path: 'fightingEnemy.do?z=', options: { method: 'POST', body: 'fightEnemyId=351164535&fightMethod=2' } },
+  ]);
 });

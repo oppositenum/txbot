@@ -1,6 +1,6 @@
 {
   "name": "txbot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "天下农场多账号协议托管 - 跨平台 (Linux/Windows/macOS)",
   "main": "src/server.js",
   "type": "commonjs",
@@ -8,6 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "sync-version": "node scripts/sync-version.js",
     "start": "node src/server.js",
     "dev": "node src/server.js",
     "build:sea": "esbuild src/server.js --bundle --platform=node --outfile=dist/bundle.cjs --format=cjs"

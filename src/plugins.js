@@ -302,21 +302,25 @@ class GoldClient extends FarmClient {
     return { ok: false, reason: '未知结果', text };
   }
 
-  // 普通敌人先 GET 进入战斗页，再用页面生成的临时 fightEnemyId 攻击。
-  // 页面可能需要多轮攻击，直到返回胜负结果；带★的 Boss 不走此入口。
+  // 普通敌人进入战斗：地图页是 POST 表单（action 只有 z，mapId/enemyId 在 hidden 字段里）。
+  // 若链接本身已带 enemyId（旧 GET 入口），则仍走 GET。进入后再用临时 fightEnemyId 多轮攻击。
   async fightEnemy(mapId, enemyId, challengeHref = null) {
     const enterPath = challengeHref || `fightingEnemy.do?mapId=${mapId}&enemyId=${enemyId}`;
-    let html = await this.req(enterPath);
+    const enterOpts = queryValue(enterPath, 'enemyId')
+      ? undefined
+      : { method: 'POST', body: `mapId=${mapId}&enemyId=${enemyId}` };
+    let html = await this.req(enterPath, enterOpts);
     let lastText = '';
     for (let round = 0; round < 30; round++) {
       const rawHtml = String(html);
       const t = strip(rawHtml).replace(/^\uFEFF/, '').trim();
       lastText = t.slice(0, 400);
       const fightEnemyId = Number((rawHtml.match(/name=["']fightEnemyId["']\s+value=["'](\d+)["']/i) || [])[1]) || 0;
+      if (/操作有误/.test(t)) return { ok: false, reason: '操作有误(未提交战斗参数)', text: lastText };
       if (/等级过高/.test(t)) return { ok: false, reason: '等级过高不能进入', text: lastText };
       if (/体力不足|体力不够/.test(t)) return { ok: false, reason: '体力不足', text: lastText };
       if (/已被.*击败|不存在|无法.*(挑战|战斗)|不能.*(挑战|战斗)/.test(t)) return { ok: false, reason: '目标当前不可挑战', text: lastText };
-      if (!fightEnemyId && /战斗胜利|胜利|战胜|击败|击杀|获得经验|获得铜币/.test(t)) return { ok: true, reason: '战斗胜利', text: lastText };
+      if (!fightEnemyId && /战斗胜利|胜利|战胜|击败|击杀|杀死|获得经验|获得铜币|【获得】|经验[:：]/.test(t)) return { ok: true, reason: '战斗胜利', text: lastText };
       if (!fightEnemyId && /战斗失败|战败|失败/.test(t)) return { ok: false, reason: '战斗失败', text: lastText };
       if (!fightEnemyId) return { ok: false, reason: '未知结果', text: lastText };
       const nextHref = actionLinkEntries(html, 'fightingEnemy').map(({ href }) => href).find((href) => queryValue(href, 'z'));

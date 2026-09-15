@@ -125,3 +125,37 @@ test('圣衣普通敌人使用fightingEnemy接口', async () => {
     { path: 'fightingEnemy.do?z=', options: { method: 'POST', body: 'fightEnemyId=351164535&fightMethod=2' } },
   ]);
 });
+
+test('圣衣地图页POST表单入口会提交mapId和enemyId', async () => {
+  const gold = new GoldClient('');
+  const requests = [];
+  gold.req = async (path, options) => {
+    requests.push({ path, options });
+    if (requests.length === 1) {
+      return '<form action="fightingEnemy.do?z=t" method="post"><input type="hidden" name="fightEnemyId" value="351208971"/><input type="hidden" name="fightMethod" value="2"/></form>';
+    }
+    return '战斗胜利 获得经验';
+  };
+  const result = await gold.fightEnemy(3, 11, 'fightingEnemy.do?z=t');
+  assert.equal(result.ok, true);
+  assert.deepEqual(requests, [
+    { path: 'fightingEnemy.do?z=t', options: { method: 'POST', body: 'mapId=3&enemyId=11' } },
+    { path: 'fightingEnemy.do?z=t', options: { method: 'POST', body: 'fightEnemyId=351208971&fightMethod=2' } },
+  ]);
+});
+
+test('圣衣打怪未提交参数时识别操作有误', async () => {
+  const gold = new GoldClient('');
+  gold.req = async () => '战斗 操作有误! >>返回黄金圣衣';
+  const result = await gold.fightEnemy(3, 11, 'fightingEnemy.do?z=t');
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, '操作有误(未提交战斗参数)');
+});
+
+test('圣衣打怪识别杀死怪物的真实结算文案', async () => {
+  const gold = new GoldClient('');
+  gold.req = async () => '战斗 你杀死了幼狼 【获得】 怪物印记 X1 经验:1 铜币:13 返回上一页';
+  const result = await gold.fightEnemy(3, 11, 'fightingEnemy.do?z=t');
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, '战斗胜利');
+});

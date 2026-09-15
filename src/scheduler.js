@@ -261,10 +261,14 @@ async function runGoldFightJob(id) {
     return;
   }
   let killed = 0;
-  for (const b of targets.filter((x) => x.available)) {
+  const available = targets.filter((x) => x.available);
+  for (const b of available) {
     const r = await g.fightEnemy(b.mapId, b.enemyId, b.challengeHref);
     if (r.ok) { killed++; log(id, `圣衣打怪[${b.areaName}]${b.name}(Lv${b.level}): 胜利`); }
-    else log(id, `圣衣打怪[${b.areaName}]${b.name}(Lv${b.level})未打成: ${r.reason}`);
+    else {
+      const hint = r.reason === '未知结果' && r.text ? `（${String(r.text).replace(/\s+/g, ' ').slice(0, 80)}）` : '';
+      log(id, `圣衣打怪[${b.areaName}]${b.name}(Lv${b.level})未打成: ${r.reason}${hint}`);
+    }
     await sleep(600 + Math.random() * 600);
   }
   // 按最近的怪物冷却剩余时间精确唤醒，封顶 goldFightPollMaxMin
@@ -275,6 +279,7 @@ async function runGoldFightJob(id) {
   // 每次巡检都留痕（哪怕没打到），否则用户看不到任务在运行的证据
   const nextStr = new Date(next).toLocaleTimeString();
   if (killed) log(id, `圣衣打怪完成，击杀${killed}只(候选${targets.length}只)；下次 ${nextStr}`);
+  else if (available.length) log(id, `圣衣打怪巡检: 尝试${available.length}只均未打成；下次 ${nextStr}`);
   else log(id, `圣衣打怪巡检: ${targets.length}只候选怪均在冷却，最近${cooling.length ? Math.ceil(Math.min(...cooling) / 60) + '分钟' : '未知'}后刷新；下次 ${nextStr}`);
 }
 

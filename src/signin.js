@@ -36,12 +36,20 @@ async function groupSignin(c) {
 
 // QQ签到：sign.do（通常无验证码）
 async function qqSignin(c) {
-  const q = await c.req('https://tx.com.cn/activity/qq/cs/sign.do');
-  const terminal = terminalResult('qqSignin', q);
-  if (terminal) return terminal;
-  let body = 'type=1&confirm=1&authnum=';
-  if (/fltregimg/.test(q)) { const rk = grab(q, 'regkey'); body += await solveCaptcha(imgid(q) || rk); if (rk) body += `&regkey=${rk}`; }
-  return R(await c.req('https://tx.com.cn/activity/qq/cs/sign.do', { method: 'POST', body }));
+  let page = await c.req('https://tx.com.cn/activity/qq/cs/sign.do');
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const terminal = terminalResult('qqSignin', page);
+    if (terminal && !/验证码.{0,12}(?:错误|不正确|失效|填错)|请输入图片中的验证码/.test(terminal)) return terminal;
+    const rk = grab(page, 'regkey');
+    let body = 'type=1&confirm=1&authnum=';
+    if (/fltregimg/.test(page)) body += await solveCaptcha(imgid(page) || rk);
+    if (rk) body += `&regkey=${rk}`;
+    page = await c.req('https://tx.com.cn/activity/qq/cs/sign.do', { method: 'POST', body });
+    const result = R(page);
+    if (!/验证码.{0,12}(?:错误|不正确|失效|填错)|请输入图片中的验证码/.test(result)) return result;
+    // 网站可能在首次 POST 后才下发验证码；下一轮重新解析页面并 OCR。
+  }
+  return R(page);
 }
 
 module.exports = { farmSignin, groupSignin, qqSignin };

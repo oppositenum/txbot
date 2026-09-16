@@ -355,23 +355,27 @@ async function runCareJob(id) {
   const acc = store.get(id); const cfg = acc.config;
   const cap = cfg.careMax > 0 ? cfg.careMax : Infinity;
   const fix = (s) => s.replace(/&amp;/g, '&');
+  const touch = () => {};
   const WEED_DONE = /除光|没有.*杂草|清理完|不需要除草|没有杂草/;
   const KILL_DONE = /杀光|没有.*害虫|都健康|不需要杀虫|没有害虫/;
 
   // 除草/杀虫：同一地块反复调用同一链接直到"除光/杀光"文案出现
   const runRepeatPass = async (oper, needKey, doneRe) => {
-    const pc = new FarmClient(acc.cookie, { proxy: acc.proxy });
+      const pc = new FarmClient(acc.cookie, { proxy: acc.proxy });
     let n = 0;
     for (const f of await pc.getRankAll(oper, 15)) {
+      touch();
       if (n >= cap) break;
       // 好友土地每页只有少量地块，护理入口可能在第4页以后；必须完整翻页，
       // 否则排行榜明明提示可护理，前3页没命中时却会误报“暂无”。
       for (const l of await pc.getFriendFarm(f.uid, 20)) {
+        touch();
         if (n >= cap) break;
         const link = l[needKey];
         if (!link) continue;
         for (let i = 0; i < 80 && n < cap; i++) {
           const r = await pc.req(fix(link)).then(FarmClient.resultText);
+          touch();
           n++;
           if (doneRe.test(r) || /失败|不能|已被/.test(r)) break;
           await sleep(100 + Math.random() * 200);
@@ -387,12 +391,15 @@ async function runCareJob(id) {
     const pc = new FarmClient(acc.cookie, { proxy: acc.proxy });
     let n = 0;
     for (const f of await pc.getRankAll(oper, 15)) {
+      touch();
       if (n >= cap) break;
       const firstLand = (await pc.getFriendFarm(f.uid, 20)).find((l) => l.needWater);
+      touch();
       if (!firstLand) continue;
       let link = fix(firstLand.needWater);
       for (let i = 0; i < 100 && link && n < cap; i++) {
         const html = await pc.req(link);
+        touch();
         n++;
         link = actionLinks(html, 'water').find((href) => queryValue(href, 'landId') && queryValue(href, 'tuid')) || null;
         if (link) await sleep(100 + Math.random() * 200);
@@ -695,8 +702,8 @@ async function runJob(id, type, retried = false) {
       const e = new Error(`${type} 执行超过20分钟未完成，判定为卡死`);
       e.code = 'JOB_TIMEOUT';
       reject(e);
-    }, 20 * 60 * 1000));
-    await Promise.race([task, timeout]);
+    }, type === 'care' ? 24 * 60 * 60 * 1000 : 20 * 60 * 1000));
+    await (type === 'care' ? task : Promise.race([task, timeout]));
     store.setStatus(id, { state: 'idle' });
   } catch (e) {
     if (type === 'relogin') {

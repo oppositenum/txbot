@@ -8,7 +8,7 @@ const REJECTION = '失败!系统检测多号刷签到';
 
 // 模块隔离：禁止加载真实 store、客户端或 OCR，不读取/写入真实账号。
 function isolated(file, mocks, extra = '') {
-  const sandbox = { module: { exports: {} }, console: { log() {} }, Date, Math,
+  const sandbox = { module: { exports: {} }, console: { log() {} }, Date, Math, URL,
     require(name) { if (Object.hasOwn(mocks, name)) return mocks[name]; throw new Error('Unexpected dependency: ' + name); } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src', file), 'utf8') + extra, sandbox, { filename: file });
   return sandbox.module.exports;
@@ -155,6 +155,60 @@ test('QQ 签到读页面和直接领取提交均使用全局手机 UA', async ()
   assert.equal(requests[0].opts.headers['User-Agent'], USER_AGENT);
   assert.equal(requests[1].opts.headers['User-Agent'], USER_AGENT);
   assert.equal(requests[1].opts.body, 'type=1&confirm=1&authnum=');
+});
+
+test('QQ 签到保留相对 action 的查询参数及验证码 key，错误后使用新表单', async () => {
+  const requests = [], images = [];
+  const pages = [
+    '<form action="sign.do?z=first&amp;from=qq"><img src="/in/fltregimg.jsp?imgid=101"><input name="key" value="101"><input name="authnum"><input type="hidden" name="authnum" value="$authnum"></form>',
+    '<p>验证码错误,请重试</p><form action="/activity/qq/cs/sign.do?z=second"><img src="/in/fltregimg.jsp?imgid=202"><input value="202" name="key"></form>',
+    '<p>成功获得:积分400</p>',
+  ];
+  const signin = isolated('signin.js', {
+    './captcha': { solveCaptcha: async id => { images.push(id); return id === '101' ? '1234' : '2369'; } },
+    './daily-result': daily,
+  });
+  const result = await signin.qqSignin({ req: async (url, opts = {}) => {
+    requests.push({ url, ...opts });
+    assert.ok(pages.length, '不能超过预期次数提交');
+    return pages.shift();
+  } });
+  assert.equal(result, '成功获得:积分400');
+  assert.deepEqual(images, ['101', '202']);
+  assert.equal(requests.length, 3);
+  assert.equal(requests[1].url, 'https://tx.com.cn/activity/qq/cs/sign.do?z=first&from=qq');
+  assert.equal(requests[2].url, 'https://tx.com.cn/activity/qq/cs/sign.do?z=second');
+  for (const [index, key, code] of [[1, '101', '1234'], [2, '202', '2369']]) {
+    const body = new URLSearchParams(requests[index].body);
+    assert.equal(requests[index].method, 'POST');
+    assert.equal(body.get('key'), key);
+    assert.equal(body.get('authnum'), code);
+    assert.equal(body.get('type'), '1');
+    assert.equal(body.get('confirm'), '1');
+    assert.equal(body.has('regkey'), false);
+  }
+});
+
+test('QQ 签到兼容 regkey 字段，已签到页面不再提交或调用 OCR', async () => {
+  const signin = isolated('signin.js', {
+    './captcha': { solveCaptcha: async () => '1234' }, './daily-result': daily,
+  });
+  let submitted;
+  await signin.qqSignin({ req: async (url, opts) => {
+    if (!opts) return '<form action="https://tx.com.cn/activity/qq/cs/sign.do?z=test"><input name="regkey" value="303"><img src="/in/fltregimg.jsp?imgid=303"></form>';
+    submitted = new URLSearchParams(opts.body);
+    return '成功获得:积分400';
+  } });
+  assert.equal(submitted.get('regkey'), '303');
+  assert.equal(submitted.has('key'), false);
+  let reads = 0;
+  const result = await signin.qqSignin({ req: async (url, opts) => {
+    reads++;
+    assert.equal(opts, undefined);
+    return '今日已签到过: 第9天,明天继续吧,查看记录';
+  } });
+  assert.equal(reads, 1);
+  assert.equal(daily.classifyResult('qqSignin', result).state, 'success');
 });
 
 test('农场与各插件、登录底层及重定向请求统一使用手机 UA', async () => {

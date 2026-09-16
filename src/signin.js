@@ -10,9 +10,13 @@ function terminalResult(key, html) {
 
 const grab = (html, name) => (html.match(new RegExp(`name=['"]${name}['"][^>]*value=['"]([^'"]*)['"]`)) || html.match(new RegExp(`value=['"]([^'"]*)['"][^>]*name=['"]${name}['"]`)) || [])[1];
 const imgid = (html) => (html.match(/fltregimg\.jsp\?imgid=(\d+)/) || [])[1];
+const QQ_SIGNIN_URL = 'https://tx.com.cn/activity/qq/cs/sign.do';
 const qqAction = (html) => {
-  const m = html.match(/<form[^>]+action=['"]([^'"]*activity\/qq\/cs\/sign\.do[^'"]*)['"]/i);
-  return m ? new URL(m[1], 'https://tx.com.cn/').href : 'https://tx.com.cn/activity/qq/cs/sign.do';
+  for (const m of html.matchAll(/<form\b[^>]*\baction\s*=\s*['"]([^'"]*)['"]/gi)) {
+    const url = new URL(m[1].replace(/&amp;/gi, '&'), QQ_SIGNIN_URL);
+    if (url.origin === 'https://tx.com.cn' && url.pathname === '/activity/qq/cs/sign.do') return url.href;
+  }
+  return QQ_SIGNIN_URL;
 };
 const field = (html, name) => grab(html, name);
 
@@ -39,18 +43,19 @@ async function groupSignin(c) {
   return R(await c.req('https://tx.com.cn/myroom/visitor/cs/summationresult.do', { method: 'POST', body: `authnum=${code}&appid=1&referer=zoneIndex&is=${is}&regkey=${regkey}` }));
 }
 
-// QQ签到：sign.do（通常无验证码）
+// QQ签到：跟随网页 action 和验证码 key；验证码错误页会下发新的参数。
 async function qqSignin(c) {
-  let page = await c.req('https://tx.com.cn/activity/qq/cs/sign.do');
+  let page = await c.req(QQ_SIGNIN_URL);
   for (let attempt = 0; attempt < 3; attempt++) {
     const terminal = terminalResult('qqSignin', page);
     if (terminal && !/验证码.{0,12}(?:错误|不正确|失效|填错)|请输入图片中的验证码/.test(terminal)) return terminal;
     const action = qqAction(page);
-    const key = field(page, 'key') || field(page, 'regkey');
+    const keyName = field(page, 'key') ? 'key' : 'regkey';
+    const key = field(page, keyName);
     let code = '';
     if (/fltregimg/.test(page)) code = await solveCaptcha(imgid(page) || key);
     const enc = encodeURIComponent;
-    const body = `type=1&confirm=1&authnum=${enc(code)}${key ? `&key=${enc(key)}` : ''}`;
+    const body = `type=1&confirm=1&authnum=${enc(code)}${key ? `&${keyName}=${enc(key)}` : ''}`;
     page = await c.req(action, { method: 'POST', body });
     const result = R(page);
     if (!/验证码.{0,12}(?:错误|不正确|失效|填错)|请输入图片中的验证码/.test(result)) return result;

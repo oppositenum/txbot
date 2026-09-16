@@ -1,6 +1,6 @@
 {
   "name": "txbot",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "天下农场多账号协议托管 - 跨平台 (Linux/Windows/macOS)",
   "main": "src/server.js",
   "type": "commonjs",

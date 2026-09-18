@@ -113,6 +113,45 @@ test('三路检查完成后才能记录暂无好友需要护理', async () => {
   assert.ok(target.status.jobs.care > Date.now());
 });
 
+test('浇水除草杀虫按小类型并行请求，全部结束后才安排下一轮', { timeout: 2000 }, async () => {
+  const target = account();
+  const releases = new Map();
+  let allStarted;
+  const started = new Promise((resolve) => { allStarted = resolve; });
+  const fixture = isolatedCareScheduler(target, {
+    rank: (oper) => [{ uid: oper }],
+    farm: (uid) => [{
+      [({ 3: 'needWater', 1: 'needWeed', 2: 'needKill' })[uid]]: `care.do?oper=${uid}`,
+    }],
+    request(link) {
+      return new Promise((resolve) => {
+        releases.set(link, resolve);
+        if (releases.size === 3) allStarted();
+      });
+    },
+  });
+
+  let finished = false;
+  const job = fixture.scheduler.runCareJob('a1').then(() => { finished = true; });
+  try {
+    await started;
+    assert.deepEqual([...releases.keys()].sort(), ['care.do?oper=1', 'care.do?oper=2', 'care.do?oper=3']);
+    assert.equal(finished, false);
+    assert.equal(target.status.jobs.care, undefined);
+    releases.get('care.do?oper=3')('操作成功');
+    releases.get('care.do?oper=1')('除光');
+    assert.equal(target.status.jobs.care, undefined);
+    releases.get('care.do?oper=2')('杀光');
+    await job;
+    assert.equal(finished, true);
+    assert.match(fixture.scheduler.logs.a1.at(-1).msg, /帮好友\(并发\): 浇水1 除草1 杀虫1/);
+    assert.ok(target.status.jobs.care > Date.now());
+  } finally {
+    for (const resolve of releases.values()) resolve('除光 杀光');
+    await job;
+  }
+});
+
 test('护理请求失败时记录失败并交给调度器重试', async () => {
   const target = account();
   const fixture = isolatedCareScheduler(target, {

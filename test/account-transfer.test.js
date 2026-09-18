@@ -20,6 +20,19 @@ function isolatedStore(dir) {
   return sandbox.module.exports;
 }
 
+test('首次启动自动创建空账号数据文件', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'txbot-initial-data-'));
+  try {
+    const store = isolatedStore(dir);
+    const file = path.join(dir, 'data', 'accounts.json');
+    assert.equal(fs.existsSync(file), true);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).accounts, []);
+    assert.equal(store.list().length, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('账号导出包含继续运行所需配置，但不包含临时状态', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'txbot-export-'));
   try {

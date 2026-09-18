@@ -152,8 +152,22 @@ function load() {
     db.settings = { ...DEFAULT_SETTINGS, ...(db.settings || {}) };
     db.accounts = db.accounts || [];
     return db;
-  } catch {
-    return { accounts: [], settings: { ...DEFAULT_SETTINGS } };
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw new Error(`无法读取账号数据文件 ${FILE}: ${error.message}`, { cause: error });
+    }
+
+    // 首次启动时自动创建空数据库；后续导入/新增账号会直接更新该文件。
+    const db = { accounts: [], settings: { ...DEFAULT_SETTINGS } };
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    try {
+      fs.writeFileSync(FILE, JSON.stringify(db, null, 2), { flag: 'wx' });
+    } catch (writeError) {
+      if (writeError.code !== 'EEXIST') {
+        throw new Error(`无法创建账号数据文件 ${FILE}: ${writeError.message}`, { cause: writeError });
+      }
+    }
+    return db;
   }
 }
 

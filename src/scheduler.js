@@ -19,6 +19,7 @@ const clients = {};    // id -> FarmClient（含 proxy）
 const running = new Set(); // 正在执行 job 的账号
 let activeCount = 0;   // 全局并发计数
 let tickTimer = null;
+const JOB_TYPES = ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pasturefeed', 'pioneer', 'pettrain', 'goldfight', 'msgwatch'];
 
 function log(id, msg) {
   (logs[id] = logs[id] || []).push({ ts: Date.now(), msg: String(msg).slice(0, 300) });
@@ -762,7 +763,7 @@ function tick() {
     }
     const jobs = acc.status.jobs || {};
     let dirty = false;
-    for (const type of ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', 'pasture', 'pasturefeed', 'pioneer', 'pettrain', 'goldfight', 'msgwatch']) {
+    for (const type of JOB_TYPES) {
       if (!jobEnabled(acc, type)) continue;
       if (running.has(`${acc.id}:${type}`)) continue; // 该账号该任务已在跑（同账号不同任务可并行）
       let nr = jobs[type];
@@ -855,19 +856,23 @@ async function runCycle(id, manual = true) {
   }
 }
 
-// 服务启动恢复：为已启用账号补齐缺失的 job 时间，然后开循环
+function buildRestartJobs(acc, now = Date.now()) {
+  const jobs = {};
+  for (const type of JOB_TYPES) {
+    if (jobEnabled(acc, type)) jobs[type] = now + Math.random() * 30000;
+  }
+  // 抢积分有独立的持续轮询器，仍遵守配置开始时间和今日上限。
+  if (acc.config.grabPoints) jobs.grab = grabScheduler.nextRun(acc);
+  return jobs;
+}
+
+// 服务启动恢复：所有已开启普通任务在30秒内错峰执行一次，然后恢复各自正常排期。
 function resume() {
+  const now = Date.now();
   for (const acc of store.list()) {
-    if (!acc.config.enabled || acc.status.needLogin) continue;
-    const jobs = acc.status.jobs || {};
-    if (jobs.farm == null) jobs.farm = Date.now() + Math.random() * 30000;
-    if (jobs.daily == null) jobs.daily = computeDailyNext(acc);
-    if (acc.config.pastureLoop && jobs.pasture == null) jobs.pasture = Date.now() + Math.random() * 60000;
-    if (acc.config.pioneer && jobs.pioneer == null) jobs.pioneer = Date.now() + Math.random() * 60000;
-    if (acc.config.petTrain && jobs.pettrain == null) jobs.pettrain = Date.now() + Math.random() * 30000;
-    if (acc.config.grabPoints) jobs.grab = grabScheduler.nextRun(acc);
-    if (acc.config.goldFight && jobs.goldfight == null) jobs.goldfight = Date.now() + Math.random() * 30000;
-    store.setStatus(acc.id, { jobs, state: 'idle' });
+    if (!acc.config.enabled) continue;
+    store.setStatus(acc.id, { jobs: buildRestartJobs(acc, now), state: 'idle' });
+    log(acc.id, '服务重启: 已安排全部启用任务执行一次');
   }
   startLoop();
 }

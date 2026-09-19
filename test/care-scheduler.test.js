@@ -114,6 +114,41 @@ test('好友护理按操作文字兼容未知名称的除草和杀虫链接', ()
   assert.equal(lands[1].needKill, 'removePest.do?z=session-token&landId=202');
 });
 
+test('好友农场按真实分页链接读取后页的除草和杀虫地块', async () => {
+  const client = new FarmClient('');
+  const requests = [];
+  client.req = async (path) => {
+    requests.push(path);
+    if (path === 'index.do?uid=60541821') return `
+      <strong>黑土地1:</strong>(富贵竹)(0星)施肥
+      <a href="myLand.do?z=session-token&amp;uid=60541821&amp;flag=0&amp;pn=2">下页</a>
+      <a href="myLand.do?z=session-token&amp;uid=60541821&amp;flag=0&amp;pn=3">3</a>
+    `;
+    if (path.endsWith('pn=2')) return `
+      <strong>土地8:</strong>(富贵竹)(0星)
+      <a href="killInsects.do?z=session-token&amp;landId=208&amp;tuid=60541821">杀虫(1)</a>
+      <a href="weeding.do?z=session-token&amp;landId=208&amp;tuid=60541821">除草(1)</a>
+      <a href="myLand.do?z=session-token&amp;uid=60541821&amp;pn=3">下页</a>
+    `;
+    if (path.endsWith('pn=3')) return `
+      <strong>土地11:</strong>(富贵竹)(0星)
+      <a href="killInsects.do?z=session-token&amp;landId=211&amp;tuid=60541821">杀虫(1)</a>
+      <a href="weeding.do?z=session-token&amp;landId=211&amp;tuid=60541821">除草(1)</a>
+    `;
+    throw new Error(path);
+  };
+
+  const lands = await client.getFriendFarm(60541821, 20);
+
+  assert.deepEqual(requests, [
+    'index.do?uid=60541821',
+    'myLand.do?uid=60541821&flag=0&pn=2',
+    'myLand.do?uid=60541821&flag=0&pn=3',
+  ]);
+  assert.deepEqual(lands.filter((land) => land.needWeed).map((land) => land.landId), [208, 211]);
+  assert.deepEqual(lands.filter((land) => land.needKill).map((land) => land.landId), [208, 211]);
+});
+
 test('好友护理不受自家浇水除草杀虫开关限制', async () => {
   const target = account();
   const fixture = isolatedCareScheduler(target, {

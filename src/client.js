@@ -363,12 +363,16 @@ class FarmClient {
   // 好友农场（含可偷/可护理链接）
   async getFriendFarm(uid, maxPages = 3) {
     const lands = [];
-    for (let pn = 1; pn <= maxPages; pn++) {
+    let totalPages = 1;
+    for (let pn = 1; pn <= Math.min(maxPages, totalPages); pn++) {
       const html = await this.req(pn === 1 ? `index.do?uid=${uid}` : `myLand.do?uid=${uid}&flag=0&pn=${pn}`);
       lands.push(...FarmClient.parseLands(html));
-      const t = strip(html);
-      const pg = t.match(/(\d+)条,(\d+)\/(\d+)页/);
-      if (!pg || +pg[2] >= +pg[3]) break;
+      // 好友农场页面没有稳定的“总条数/当前页”文字，只提供带 pn 的分页链接。
+      // 从真实链接取最大页数，否则第一页无草虫、草虫在后页时会被永久漏掉。
+      const pageNums = actionLinks(html, 'myLand')
+        .filter((href) => String(queryValue(href, 'uid')) === String(uid))
+        .map((href) => Number(queryValue(href, 'pn')) || 1);
+      totalPages = Math.min(maxPages, Math.max(totalPages, pn, ...pageNums));
     }
     return lands;
   }

@@ -24,7 +24,9 @@ const JOB_TYPES = ['farm', 'friendland', 'steal', 'care', 'farmtask', 'daily', '
 function log(id, msg) {
   (logs[id] = logs[id] || []).push({ ts: Date.now(), msg: String(msg).slice(0, 300) });
   if (logs[id].length > 500) logs[id] = logs[id].slice(-400);
-  console.log(`[${id}] ${msg}`);
+  const acc = store.get(id);
+  const label = acc?.name || acc?.useruid || id;
+  console.log(`[${label}] ${msg}`);
 }
 
 // ---- 客户端（应用/更新代理）----

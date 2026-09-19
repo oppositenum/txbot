@@ -5,6 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 function loadScheduler(account) {
+  const consoleLines = [];
   const store = {
     list: () => [account],
     get: () => account,
@@ -17,7 +18,7 @@ function loadScheduler(account) {
   };
   const source = fs.readFileSync(path.join(__dirname, '../src/scheduler.js'), 'utf8');
   const sandbox = {
-    module: { exports: {} }, console: { log() {} }, Date, Math, setTimeout,
+    module: { exports: {} }, console: { log(line) { consoleLines.push(line); } }, Date, Math, setTimeout,
     setInterval: () => 1,
     require(name) {
       const mocks = {
@@ -32,6 +33,7 @@ function loadScheduler(account) {
     },
   };
   vm.runInNewContext(source, sandbox, { filename: 'scheduler.js' });
+  sandbox.module.exports.consoleLines = consoleLines;
   return sandbox.module.exports;
 }
 
@@ -85,4 +87,16 @@ test('服务重启保留登录失效账号的即时排期供重登后执行', ()
 
   assert.deepEqual(Object.keys(account.status.jobs).sort(), ['care', 'farm']);
   assert.equal(account.status.needLogin, true);
+});
+
+test('控制台日志优先显示账号名而不是内部编号', () => {
+  const account = {
+    id: 'a11', name: '41287438', useruid: '10001',
+    config: { enabled: false }, status: { jobs: {} },
+  };
+  const scheduler = loadScheduler(account);
+
+  scheduler.log('a11', '测试日志');
+
+  assert.equal(scheduler.consoleLines.at(-1), '[41287438] 测试日志');
 });

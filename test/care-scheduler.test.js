@@ -86,6 +86,20 @@ test('农场收割链接兼容z参数在landId前且HTML实体编码', () => {
   assert.equal(land.canHarvest, 'harvest.do?z=session-token&landId=123456');
 });
 
+test('好友农场土地兼容专用除草和杀虫动作名', () => {
+  const lands = FarmClient.parseLands(`
+    <strong>土地1:</strong>(水晶兰)(0星)
+    <a href="weedingFriend.do?z=session-token&amp;landId=101">除草</a>
+    <strong>黑土地2:</strong>(仙客来)(0星)
+    <a href="killFriendInsects.do?z=session-token&amp;landId=102">杀虫</a>
+  `);
+
+  assert.equal(lands[0].landId, 101);
+  assert.equal(lands[0].needWeed, 'weedingFriend.do?z=session-token&landId=101');
+  assert.equal(lands[1].landId, 102);
+  assert.equal(lands[1].needKill, 'killFriendInsects.do?z=session-token&landId=102');
+});
+
 test('好友护理不受自家浇水除草杀虫开关限制', async () => {
   const target = account();
   const fixture = isolatedCareScheduler(target, {

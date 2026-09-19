@@ -257,7 +257,9 @@ class FarmClient {
       // 不能假设 landId 紧跟在问号后面，否则页面显示可收割但调度器会漏判。
       const href = (name) => actionLinks(b, name)[0] || null;
       const harvestHref = href('harvest');
-      const landHref = ['harvest', 'upLandInfo', 'water', 'weeding', /killInsect\w*/, 'steal'].map(href).find(Boolean) || null;
+      const weedHref = href(/weeding(?:Friend)?/);
+      const killHref = href(/kill(?:Friend)?Insects?/);
+      const landHref = [harvestHref, href('upLandInfo'), href('water'), weedHref, killHref, href('steal')].find(Boolean) || null;
       const landId = Number(queryValue(landHref, 'landId')) || null;
       const land = {
         pos: +head[2],
@@ -270,8 +272,8 @@ class FarmClient {
         yield: (t.match(/产[\d+]+\/剩\d+/) || [])[0] || null,
         empty: /空地/.test(t),
         needWater: href('water'),
-        needWeed: href('weeding'),
-        needKill: href(/killInsect\w*/),
+        needWeed: weedHref,
+        needKill: killHref,
         canSteal: href('steal'),
         canHarvest: landId && harvestHref ? harvestHref : null,
       };

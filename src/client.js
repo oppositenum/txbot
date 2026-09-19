@@ -256,9 +256,16 @@ class FarmClient {
       // 网站会把会话参数 z 放在 landId 前面，并以 HTML 实体编码连接符；
       // 不能假设 landId 紧跟在问号后面，否则页面显示可收割但调度器会漏判。
       const href = (name) => actionLinks(b, name)[0] || null;
+      const hrefByText = (textRe) => {
+        for (const m of b.matchAll(/<a\b[^>]*\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi)) {
+          if (textRe.test(strip(m[3]))) return m[2].replace(/&amp;/g, '&');
+        }
+        return null;
+      };
       const harvestHref = href('harvest');
-      const weedHref = href(/weeding(?:Friend)?/);
-      const killHref = href(/kill(?:Friend)?Insects?/);
+      // 好友页面的动作 endpoint 会随页面版本变化，中文操作文字是更稳定的协议信号。
+      const weedHref = href(/weeding(?:Friend)?/) || hrefByText(/除草/);
+      const killHref = href(/kill(?:Friend)?Insects?/) || hrefByText(/杀虫|除虫/);
       const landHref = [harvestHref, href('upLandInfo'), href('water'), weedHref, killHref, href('steal')].find(Boolean) || null;
       const landId = Number(queryValue(landHref, 'landId')) || null;
       const land = {

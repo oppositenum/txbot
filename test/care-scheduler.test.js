@@ -100,6 +100,20 @@ test('好友农场土地兼容专用除草和杀虫动作名', () => {
   assert.equal(lands[1].needKill, 'killFriendInsects.do?z=session-token&landId=102');
 });
 
+test('好友护理按操作文字兼容未知名称的除草和杀虫链接', () => {
+  const lands = FarmClient.parseLands(`
+    <strong>土地1:</strong>(水晶兰)(0星)
+    <a class="action" href="removeGrass.do?z=session-token&amp;landId=201">[除草]</a>
+    <strong>土地2:</strong>(仙客来)(0星)
+    <a data-kind="care" href='removePest.do?z=session-token&amp;landId=202'>帮忙除虫</a>
+  `);
+
+  assert.equal(lands[0].landId, 201);
+  assert.equal(lands[0].needWeed, 'removeGrass.do?z=session-token&landId=201');
+  assert.equal(lands[1].landId, 202);
+  assert.equal(lands[1].needKill, 'removePest.do?z=session-token&landId=202');
+});
+
 test('好友护理不受自家浇水除草杀虫开关限制', async () => {
   const target = account();
   const fixture = isolatedCareScheduler(target, {

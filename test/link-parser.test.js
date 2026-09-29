@@ -16,6 +16,20 @@ test('农场任务、种子袋和仓库解析支持z参数在业务参数前', a
   assert.deepEqual(await client.getStore(), { totalValue: 960, items: [{ name: '水晶兰', count: 8, seedsId: 104, locked: true }] });
 });
 
+test('我的土地翻页链接z参数在pn前面时仍读取全部页', async () => {
+  const client = new FarmClient('');
+  const page = (pos, landId, next) => `我的农场<strong>黑土地${pos}\n</strong>:(空地)<a href="upLandInfo.do?z=t&amp;landId=${landId}">1星</a>`
+    + (next ? `<a href="myLand.do?z=t&amp;pn=${next}">&gt;&gt;下页</a>` : '');
+  client.req = async (path) => {
+    if (path === 'index.do') return '金币:1 等级:1 ' + page(1, 11, 2);
+    const pn = +(path.match(/^myLand\.do\?pn=(\d+)$/) || [])[1];
+    if (!pn) throw new Error(path);
+    return pn === 2 ? page(2, 22, 3) : page(3, 33); // 越界页被夹到最后一页
+  };
+  const farm = await client.getFarm(5);
+  assert.deepEqual(farm.lands.map((l) => [l.pos, l.landId, l.empty]), [[1, 11, true], [2, 22, true], [3, 33, true]]);
+});
+
 test('推荐种植和商店种子目录解析支持动态z参数', async () => {
   const client = new FarmClient('');
   client.req = async (path) => {

@@ -237,7 +237,8 @@ class FarmClient {
     const lands = [];
     const addAll = (list) => { for (const l of list) { if (l.landId != null) { if (seen.has(l.landId)) continue; seen.add(l.landId); } lands.push(l); } };
     addAll(FarmClient.parseLands(html1));
-    const hasNext = /myLand\.do\?pn=\d+/.test(html1);
+    // 翻页链接形如 myLand.do?z=...&amp;pn=2，z 在 pn 前面，不能假设 pn 紧跟问号
+    const hasNext = actionLinks(html1, 'myLand').some((h) => queryValue(h, 'pn'));
     if (hasNext && maxPages > 1) {
       const rest = await Promise.all(Array.from({ length: maxPages - 1 }, (_, i) => this.req(`myLand.do?pn=${i + 2}`)));
       for (const html of rest) addAll(FarmClient.parseLands(html));

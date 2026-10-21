@@ -7,7 +7,12 @@ async function solveCaptcha(imgid) {
   const r = await fetch(`${OCR_BASE}?url=${encodeURIComponent(imgUrl)}`, { signal: AbortSignal.timeout(20000) });
   if (!r.ok) throw new Error('OCR服务返回 ' + r.status);
   const txt = (await r.text()).trim();
-  const code = (txt.match(/\d{4,6}/) || [])[0] || txt.replace(/[^0-9]/g, '');
+  let raw = txt;
+  try {
+    const body = JSON.parse(txt);
+    if (body && body.result != null) raw = String(body.result);
+  } catch (_) { /* 兼容旧版纯文本 */ }
+  const code = (String(raw).match(/\d{4,6}/) || [])[0] || String(raw).replace(/[^0-9]/g, '');
   if (!code) throw new Error('OCR未识别出验证码: ' + txt.slice(0, 40));
   return code;
 }

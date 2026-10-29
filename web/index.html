@@ -54,7 +54,7 @@ main{max-width:1480px;margin-left:216px;padding:43px 46px 32px}.workspace-head{d
   </div><label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input id="accountSearch" type="search" placeholder="搜索备注或账号…" aria-label="搜索备注或账号" oninput="renderAccounts()"></label></div>
   <div class="list-caption"><span id="resultCount" aria-live="polite">正在加载账号</span><div class="list-controls"><div class="bulk-actions" role="group" aria-label="全部账号托管控制"><button class="btn s" id="startAllBtn" onclick="setAllManaged(true)" title="开启所有已暂停账号"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m8 5 11 7-11 7Z"/></svg>全部托管</button><button class="btn s d" id="stopAllBtn" onclick="setAllManaged(false)" title="停止所有已开启账号"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>全部停止</button><button class="btn s" onclick="openAddFriendAll()" title="让所有已登录账号添加同一个天下号">全员加好友</button></div><span class="sync-label" id="syncStatus"><i class="dot"></i>等待同步</span></div></div>
   <section class="account-table" aria-label="账号列表"><div class="table-heading" aria-hidden="true"><span>账号 / 等级</span><span>农场概况</span><span>托管状态</span><span style="text-align:right">管理操作</span></div><div id="list" aria-busy="true"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></section>
-  <footer class="page-foot"><span>每 15 秒更新账号状态</span><span>txbot / 天下托管 · v1.0.5</span></footer>
+  <footer class="page-foot"><span>每 15 秒更新账号状态</span><span>txbot / 天下托管 · v1.0.6</span></footer>
 </main>
 
 <!-- 添加/编辑账号 -->
@@ -84,7 +84,7 @@ main{max-width:1480px;margin-left:216px;padding:43px 46px 32px}.workspace-head{d
   <p class="dialog-intro">按天下号搜索，然后让每个已登录账号发送一次加好友请求。</p>
   <div class="f"><label>对方天下号</label><input type="text" id="friendUid" inputmode="numeric" placeholder="例如：30146530" maxlength="12"></div>
   <div class="f"><label>加好友留言（可选）</label><textarea id="friendNotice" placeholder="留空则不填写留言" style="min-height:72px"></textarea></div>
-  <div class="hint">只处理已有登录态的账号。请求会逐个发送，已经是好友或申请已发出时会计入完成。</div>
+  <div class="hint">提交后立即在后台发送，下面会逐个显示进度。关闭窗口不会中断，重新打开可继续查看。已经是好友或申请已发出时会计入完成。</div>
   <div class="transfer-summary" id="friendResult" hidden></div>
   <div class="sheetacts"><button class="btn" onclick="hide('mFriend')">取消</button><button class="btn p" id="friendBtn" onclick="addFriendAll()">开始添加</button></div>
 </div></div>
@@ -589,13 +589,47 @@ async function saveAccount() {
 }
 async function del(id) { const name = accounts.find(a => a.id === id)?.name || id; if (!confirm(`确定删除“${name}”？该账号的配置与本地记录将被移除。`)) return; try { await api('/accounts/' + id, { method: 'DELETE' }); toast('账号已删除'); await loadAccounts(); } catch(e) { toast('删除失败：' + e.message); } }
 async function toggle(id, on) { try { await api('/accounts/' + id, { method: 'PUT', body: { config: { enabled: on } } }); toast(on ? '已开启托管，任务将按排期执行' : '已暂停后续调度，进行中的任务可能仍会完成'); await loadAccounts(); } catch (e) { toast(e.message); renderAccounts(); } }
+let friendJobId = null, friendPollTimer = null;
+function renderFriendJob(job) {
+  const box = $('#friendResult');
+  const lines = (job.results || []).map(item => `${item.ok ? '完成' : '失败'} · ${item.name}：${item.message}`);
+  const active = (job.current || []).join('、');
+  box.hidden = false;
+  box.textContent = `${job.done} / ${job.total} · 成功 ${job.success} · 失败 ${job.failed}${job.skipped ? ` · 跳过未登录 ${job.skipped}` : ''}`
+    + (job.status === 'running' && active ? `\n正在处理：${active}` : '')
+    + (job.status === 'failed' && job.error ? `\n任务中断：${job.error}` : '')
+    + (lines.length ? `\n${lines.join('\n')}` : '');
+  box.scrollTop = box.scrollHeight;
+}
+function scheduleFriendPoll() {
+  clearTimeout(friendPollTimer);
+  friendPollTimer = setTimeout(pollFriendJob, 800);
+}
+async function pollFriendJob() {
+  if (!friendJobId) return;
+  try {
+    const job = await api('/accounts/add-friend-jobs/' + friendJobId);
+    renderFriendJob(job);
+    if (job.status === 'running') return scheduleFriendPoll();
+    friendJobId = null;
+    $('#friendBtn').disabled = false;
+    $('#friendBtn').textContent = '开始添加';
+    toast(`加好友结束：成功 ${job.success}，失败 ${job.failed}`);
+  } catch (e) {
+    $('#friendResult').hidden = false;
+    $('#friendResult').textContent = '进度暂时读不到：' + e.message;
+    scheduleFriendPoll();
+  }
+}
 function openAddFriendAll() {
-  $('#friendUid').value = '';
-  $('#friendNotice').value = '';
-  $('#friendResult').hidden = true;
-  $('#friendResult').textContent = '';
-  $('#friendBtn').disabled = false;
-  $('#friendBtn').textContent = '开始添加';
+  if (!friendJobId) {
+    $('#friendUid').value = '';
+    $('#friendNotice').value = '';
+    $('#friendResult').hidden = true;
+    $('#friendResult').textContent = '';
+    $('#friendBtn').disabled = false;
+    $('#friendBtn').textContent = '开始添加';
+  }
   show('mFriend');
 }
 async function addFriendAll() {
@@ -604,20 +638,22 @@ async function addFriendAll() {
   if (!/^\d{4,12}$/.test(condition)) return toast('请填写 4 到 12 位天下号');
   const ready = accounts.filter(account => account.hasCookie).length;
   if (!ready) return toast('当前没有已登录的账号');
+  if (friendJobId) return toast('已有一批加好友正在进行');
   if (!confirm(`确定让 ${ready} 个已登录账号都添加天下号 ${condition}？`)) return;
   const btn = $('#friendBtn');
   const box = $('#friendResult');
   btn.disabled = true; btn.textContent = '添加中…';
-  box.hidden = false; box.textContent = `正在让 ${ready} 个账号添加 ${condition}…`;
+  box.hidden = false; box.textContent = `正在提交 ${ready} 个账号…`;
   try {
-    const result = await api('/accounts/add-friend-all', { method: 'POST', body: { condition, notice } });
-    const lines = (result.results || []).map(item => `${item.ok ? '完成' : '失败'} · ${item.name}：${item.message}`);
-    box.textContent = `完成 ${result.success} / ${result.total}${result.skipped ? `，跳过未登录 ${result.skipped}` : ''}\n` + lines.join('\n');
-    toast(`加好友完成：成功 ${result.success}，失败 ${result.failed}`);
+    const job = await api('/accounts/add-friend-all', { method: 'POST', body: { condition, notice } });
+    friendJobId = job.id;
+    renderFriendJob(job);
+    scheduleFriendPoll();
   } catch (e) {
     box.textContent = '添加失败：' + e.message;
     toast('全员加好友失败：' + e.message);
-  } finally { btn.disabled = false; btn.textContent = '开始添加'; }
+    btn.disabled = false; btn.textContent = '开始添加';
+  }
 }
 async function setAllManaged(enabled) {
   const affected = accounts.filter(account => account.config.enabled !== enabled).length;

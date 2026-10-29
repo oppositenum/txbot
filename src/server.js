@@ -85,40 +85,100 @@ app.post('/api/apply-proxy', (req, res) => {
 // ---- 账号管理 ----
 app.get('/api/accounts', (req, res) => res.json(store.list().map(pub)));
 
-// 一键启停全部账号。只处理状态确实需要变化的账号，避免重置已运行账号的排期。
-// 用每个已登录账号按天下号搜索并发送加好友请求。逐个执行，沿用客户端的请求间隔。
-app.post('/api/accounts/add-friend-all', async (req, res) => {
+// 加好友按账号并行，但同一账号仍遵守客户端的请求间隔。立即返回任务，避免整批被网关 504。
+const ADD_FRIEND_CONCURRENCY = 3;
+const addFriendJobs = new Map();
+let addFriendSeq = 0;
+
+function accountLabel(account) {
+  return account.name || account.useruid || account.id;
+}
+
+async function addFriendForAccount(account, condition, notice) {
+  const label = accountLabel(account);
+  const attempt = (acc) => sched.getClient(acc).addFriend(condition, notice);
+  try {
+    const outcome = await attempt(account);
+    sched.log(account.id, `加好友 ${condition} ${outcome.ok ? '完成' : '未成功'}: ${outcome.message}`);
+    return { id: account.id, name: label, ok: !!outcome.ok, already: !!outcome.already, message: outcome.message };
+  } catch (e) {
+    if (e.code === 'NOT_LOGGED_IN' && account.useruid && account.password) {
+      try {
+        await sched.relogin(account.id);
+        const outcome = await attempt(store.get(account.id));
+        sched.log(account.id, `加好友 ${condition} 完成: ${outcome.message}`);
+        return { id: account.id, name: label, ok: !!outcome.ok, already: !!outcome.already, message: outcome.message };
+      } catch (retryError) {
+        e = retryError;
+      }
+    }
+    sched.log(account.id, `加好友 ${condition} 失败: ${e.message}`);
+    return { id: account.id, name: label, ok: false, message: e.message };
+  }
+}
+
+function publicFriendJob(job) {
+  const success = job.results.filter((item) => item.ok).length;
+  return {
+    id: job.id,
+    condition: job.condition,
+    status: job.status,
+    total: job.total,
+    done: job.done,
+    success,
+    failed: job.results.length - success,
+    skipped: job.skipped,
+    current: [...job.active],
+    results: job.results,
+    error: job.error || null,
+  };
+}
+
+app.post('/api/accounts/add-friend-all', (req, res) => {
   const condition = String(req.body?.condition || '').trim();
   const notice = String(req.body?.notice || '').slice(0, 80);
   if (!/^\d{4,12}$/.test(condition)) return res.status(400).json({ error: '请填写 4 到 12 位天下号' });
-  const accounts = store.list().filter((account) => account.cookie);
-  const results = [];
-  for (const account of accounts) {
-    const label = account.name || account.useruid || account.id;
-    try {
-      const outcome = await sched.getClient(account).addFriend(condition, notice);
-      const line = `${label}: ${outcome.message}`;
-      sched.log(account.id, `加好友 ${condition} ${outcome.ok ? '完成' : '未成功'}: ${outcome.message}`);
-      results.push({ id: account.id, name: label, ok: outcome.ok, already: outcome.already, message: outcome.message });
-    } catch (e) {
-      if (e.code === 'NOT_LOGGED_IN' && account.useruid && account.password) {
-        try {
-          await sched.relogin(account.id);
-          const outcome = await sched.getClient(store.get(account.id)).addFriend(condition, notice);
-          sched.log(account.id, `加好友 ${condition} 完成: ${outcome.message}`);
-          results.push({ id: account.id, name: label, ok: outcome.ok, already: outcome.already, message: outcome.message });
-          continue;
-        } catch (retryError) {
-          e = retryError;
-        }
-      }
-      sched.log(account.id, `加好友 ${condition} 失败: ${e.message}`);
-      results.push({ id: account.id, name: label, ok: false, message: e.message });
-    }
+  if ([...addFriendJobs.values()].some((job) => job.status === 'running')) {
+    return res.status(409).json({ error: '已有一批加好友正在进行，请等它结束后再开始' });
   }
-  const ok = results.filter((item) => item.ok).length;
-  res.json({ ok: true, condition, total: accounts.length, success: ok, failed: results.length - ok, skipped: store.list().length - accounts.length, results });
+  const accounts = store.list().filter((account) => account.cookie);
+  const id = 'f' + (++addFriendSeq);
+  const job = {
+    id, condition, status: 'running', total: accounts.length, done: 0,
+    skipped: store.list().length - accounts.length, active: new Set(), results: [], error: null,
+  };
+  addFriendJobs.set(id, job);
+  for (const [key, item] of addFriendJobs) {
+    if (item.status !== 'running' && key !== id && addFriendJobs.size > 5) addFriendJobs.delete(key);
+  }
+  const queue = accounts.slice();
+  const worker = async () => {
+    while (queue.length) {
+      const account = queue.shift();
+      const label = accountLabel(account);
+      job.active.add(label);
+      try {
+        job.results.push(await addFriendForAccount(account, condition, notice));
+      } finally {
+        job.active.delete(label);
+        job.done++;
+      }
+    }
+  };
+  const workers = Math.min(ADD_FRIEND_CONCURRENCY, queue.length);
+  Promise.all(Array.from({ length: workers }, worker))
+    .then(() => { job.status = 'done'; })
+    .catch((e) => { job.status = 'failed'; job.error = e.message; });
+  res.json(publicFriendJob(job));
 });
+
+app.get('/api/accounts/add-friend-jobs/:id', (req, res) => {
+  const job = addFriendJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: '这批加好友已不在内存中' });
+  res.json(publicFriendJob(job));
+});
+
+// 一键启停全部账号。只处理状态确实需要变化的账号，避免重置已运行账号的排期。
 
 app.post('/api/accounts/bulk-enabled', (req, res) => {
   const { enabled } = req.body || {};

@@ -408,6 +408,80 @@ class FarmClient {
   // 完成任务，领取奖励(经验/金币/道具)；只有库存够时(getTaskInfo().canFinish)才应调用
   async finishTask(orderId) { return this._act(`finishOrder.do?orderId=${orderId}`); }
 
+  // ===== 按天下号搜索并加好友 =====
+  // 搜索页「加好友」指向 /relate/friendAugment.do，确认页再 POST 到 /relate/cs/friendAugment.do。
+  static parseFriendSearch(html) {
+    const text = strip(html);
+    const augment = (String(html).match(/(?:https?:\/\/tx\.com\.cn)?\/relate\/friendAugment\.do\?[^"'<>\s]+/i) || [])[0]?.replace(/&amp;/g, '&')
+      || actionLinks(html, 'friendAugment')[0];
+    const profile = [...String(html).matchAll(/<a[^>]+href="[^"]*uid=(\d+)"[^>]*>([^<]+)<\/a>/gi)]
+      .map((m) => ({ uid: m[1], name: m[2].replace(/&nbsp;/g, ' ').trim() }))
+      .find((item) => item.name && !/返回|首页/.test(item.name));
+    const titled = text.match(/将\s*(.+?)\s*[（(](\d+)[)）]\s*加为好友/);
+    const uid = queryValue(augment, 'friendId') || titled?.[2] || profile?.uid || null;
+    const name = (titled?.[1] || profile?.name || '').trim() || null;
+    if (/没有找到|未找到|查无|不存在/.test(text) && !uid) return { found: false, uid: null, name: null, href: null };
+    return { found: !!uid, uid, name, href: augment || null };
+  }
+
+  static parseAddFriendResult(html) {
+    const text = strip(html);
+    const clipped = text.match(/(?:操作成功|操作错误|温馨提示)\s*([\s\S]{0,120})/);
+    const message = ((clipped?.[1] || text).match(/(加好友请求已发送成功[\s\S]{0,24}|暂不能重复申请加好友[\s\S]{0,16}|还未处理您的好友请求[\s\S]{0,24}|你们已经是好友[\s\S]{0,12}|已经是好友[\s\S]{0,12}|好友申请已发送[\s\S]{0,16})/) || [])[1]
+      || (clipped ? clipped[1] : FarmClient.resultText(html));
+    const already = /已经是好友|已是好友|暂不能重复申请|还未处理您的好友请求/.test(message);
+    const ok = /已发送成功|操作成功|已经是好友|已是好友|暂不能重复申请|还未处理您的好友请求|好友申请已发送/.test(text);
+    return { ok, already, message: message.trim() };
+  }
+
+  async searchFriend(condition) {
+    const target = String(condition || '').trim();
+    if (!/^\d{4,12}$/.test(target)) {
+      const err = new Error('天下号应为 4 到 12 位数字');
+      err.code = 'BAD_FRIEND_ID';
+      throw err;
+    }
+    const html = await this.req('https://tx.com.cn/love/search/cs/searchSingleResult.do', {
+      method: 'POST',
+      body: new URLSearchParams({ condition: target, searchType: '23' }).toString(),
+      referer: 'https://tx.com.cn/im/cs/default.do?from=space',
+    });
+    const parsed = FarmClient.parseFriendSearch(html);
+    if (!parsed.found) {
+      const err = new Error(`没有找到天下号 ${target}`);
+      err.code = 'FRIEND_NOT_FOUND';
+      throw err;
+    }
+    return { ...parsed, condition: target };
+  }
+
+  async addFriend(condition, notice = '') {
+    const found = await this.searchFriend(condition);
+    const pageUrl = found.href.startsWith('http') ? found.href.replace(/^http:/, 'https:') : 'https://tx.com.cn' + found.href;
+    const page = await this.req(pageUrl, { referer: 'https://tx.com.cn/love/search/cs/searchSingleResult.do' });
+    const form = page.match(/<form[^>]*action="([^"]*friendAugment\.do)"[^>]*>([\s\S]*?)<\/form>/i);
+    if (!form) {
+      const parsed = FarmClient.parseAddFriendResult(page);
+      if (parsed.message) return { ...found, ...parsed };
+      const err = new Error('加好友确认页没有提交表单');
+      err.code = 'ADD_FRIEND_FORM';
+      throw err;
+    }
+    const body = new URLSearchParams();
+    for (const input of form[2].matchAll(/<(input|textarea)\b[^>]*>/gi)) {
+      const name = (input[0].match(/\bname\s*=\s*["']([^"']+)["']/i) || [])[1];
+      if (!name || name === 'sub') continue;
+      const value = (input[0].match(/\bvalue\s*=\s*["']([^"']*)["']/i) || [])[1] || '';
+      body.set(name, value.replace(/&amp;/g, '&').replace(/&quot;/g, '"'));
+    }
+    body.set('noticeContent', String(notice || '').slice(0, 80));
+    body.set('sub', '确定');
+    const action = form[1].replace(/&amp;/g, '&');
+    const actionUrl = action.startsWith('http') ? action.replace(/^http:/, 'https:') : 'https://tx.com.cn' + action;
+    const resultHtml = await this.req(actionUrl, { method: 'POST', body: body.toString(), referer: pageUrl });
+    return { ...found, ...FarmClient.parseAddFriendResult(resultHtml) };
+  }
+
   // ===== 好友留言收件箱(/im/ 命名空间，跟农场/牧场/宠物/圣衣是独立的社交功能) =====
   // 列出一页留言的 id（新消息排在前，第1页=最新）
   async getMessagePage(page = 1) {

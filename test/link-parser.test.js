@@ -1,6 +1,28 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { FarmClient } = require('../src/client');
+
+test('天下号搜索结果解析出加好友链接和昵称', () => {
+  const html = '<a href="http://tx.com.cn/space/index.do?uid=30146530">﹏谨此而已〞</a>'
+    + '<a href="/relate/friendAugment.do?z=abc&amp;friendId=30146530&amp;cfId=12">加好友</a>';
+  assert.deepEqual(FarmClient.parseFriendSearch(html), {
+    found: true,
+    uid: '30146530',
+    name: '﹏谨此而已〞',
+    href: '/relate/friendAugment.do?z=abc&friendId=30146530&cfId=12',
+  });
+});
+
+test('加好友结果区分发送成功和已经是好友', () => {
+  const sent = FarmClient.parseAddFriendResult('<div>操作成功 加好友请求已发送成功,等待对方同意.</div>');
+  const already = FarmClient.parseAddFriendResult('<div>操作错误 哎呀 好友(30146530) 还未处理您的好友请求,暂不能重复申请加好友,请稍后再试.</div>');
+  assert.equal(sent.ok, true);
+  assert.equal(sent.already, false);
+  assert.match(sent.message, /已发送成功/);
+  assert.equal(already.ok, true);
+  assert.equal(already.already, true);
+  assert.match(already.message, /暂不能重复申请/);
+});
 const { PastureClient, PetClient, GoldClient } = require('../src/plugins');
 
 test('农场任务、种子袋和仓库解析支持z参数在业务参数前', async () => {

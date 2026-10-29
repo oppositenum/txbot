@@ -86,6 +86,40 @@ app.post('/api/apply-proxy', (req, res) => {
 app.get('/api/accounts', (req, res) => res.json(store.list().map(pub)));
 
 // 一键启停全部账号。只处理状态确实需要变化的账号，避免重置已运行账号的排期。
+// 用每个已登录账号按天下号搜索并发送加好友请求。逐个执行，沿用客户端的请求间隔。
+app.post('/api/accounts/add-friend-all', async (req, res) => {
+  const condition = String(req.body?.condition || '').trim();
+  const notice = String(req.body?.notice || '').slice(0, 80);
+  if (!/^\d{4,12}$/.test(condition)) return res.status(400).json({ error: '请填写 4 到 12 位天下号' });
+  const accounts = store.list().filter((account) => account.cookie);
+  const results = [];
+  for (const account of accounts) {
+    const label = account.name || account.useruid || account.id;
+    try {
+      const outcome = await sched.getClient(account).addFriend(condition, notice);
+      const line = `${label}: ${outcome.message}`;
+      sched.log(account.id, `加好友 ${condition} ${outcome.ok ? '完成' : '未成功'}: ${outcome.message}`);
+      results.push({ id: account.id, name: label, ok: outcome.ok, already: outcome.already, message: outcome.message });
+    } catch (e) {
+      if (e.code === 'NOT_LOGGED_IN' && account.useruid && account.password) {
+        try {
+          await sched.relogin(account.id);
+          const outcome = await sched.getClient(store.get(account.id)).addFriend(condition, notice);
+          sched.log(account.id, `加好友 ${condition} 完成: ${outcome.message}`);
+          results.push({ id: account.id, name: label, ok: outcome.ok, already: outcome.already, message: outcome.message });
+          continue;
+        } catch (retryError) {
+          e = retryError;
+        }
+      }
+      sched.log(account.id, `加好友 ${condition} 失败: ${e.message}`);
+      results.push({ id: account.id, name: label, ok: false, message: e.message });
+    }
+  }
+  const ok = results.filter((item) => item.ok).length;
+  res.json({ ok: true, condition, total: accounts.length, success: ok, failed: results.length - ok, skipped: store.list().length - accounts.length, results });
+});
+
 app.post('/api/accounts/bulk-enabled', (req, res) => {
   const { enabled } = req.body || {};
   if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled 必须是布尔值' });

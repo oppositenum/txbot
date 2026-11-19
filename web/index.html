@@ -54,7 +54,7 @@ main{max-width:1480px;margin-left:216px;padding:43px 46px 32px}.workspace-head{d
   </div><label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input id="accountSearch" type="search" placeholder="搜索备注或账号…" aria-label="搜索备注或账号" oninput="renderAccounts()"></label></div>
   <div class="list-caption"><span id="resultCount" aria-live="polite">正在加载账号</span><div class="list-controls"><div class="bulk-actions" role="group" aria-label="全部账号托管控制"><button class="btn s" id="startAllBtn" onclick="setAllManaged(true)" title="开启所有已暂停账号"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m8 5 11 7-11 7Z"/></svg>全部托管</button><button class="btn s d" id="stopAllBtn" onclick="setAllManaged(false)" title="停止所有已开启账号"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>全部停止</button><button class="btn s" onclick="openAddFriendAll()" title="让所有已登录账号添加同一个天下号">全员加好友</button></div><span class="sync-label" id="syncStatus"><i class="dot"></i>等待同步</span></div></div>
   <section class="account-table" aria-label="账号列表"><div class="table-heading" aria-hidden="true"><span>账号 / 等级</span><span>农场概况</span><span>托管状态</span><span style="text-align:right">管理操作</span></div><div id="list" aria-busy="true"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></section>
-  <footer class="page-foot"><span>每 15 秒更新账号状态</span><span>txbot / 天下托管 · v1.0.6</span></footer>
+  <footer class="page-foot"><span>每 15 秒更新账号状态</span><span>txbot / 天下托管 · v1.0.7</span></footer>
 </main>
 
 <!-- 添加/编辑账号 -->
@@ -126,6 +126,7 @@ main{max-width:1480px;margin-left:216px;padding:43px 46px 32px}.workspace-head{d
     <div class="f"><label>种植种子</label><select id="cSeed"><option value="auto">自动（数量最多）</option></select></div>
     <div class="f"><label>偷菜上限(0=不限,偷完为止)</label><input type="number" id="cStealMax" min="0"></div>
     <div class="f"><label>助友上限(0=不限,全部干完)</label><input type="number" id="cCareMax" min="0"></div>
+    <div class="f"><label>浇水并发数(1=串行，大号可设2)</label><input type="number" id="cCareWaterWorkers" min="1" max="8"></div>
     <div class="f"><label>牧场巡检间隔(分钟)</label><input type="number" id="cPastureInt" min="10"></div>
     <div class="f"><label>牧场喂食间隔(分钟，建议180-240)</label><input type="number" id="cPastureFeedInt" min="30"></div>
     <div class="f"><label>拓荒场景</label><select id="cPioScene"><option value="1">野猪林</option><option value="2">九寨沟</option><option value="3">西双版纳</option></select></div>
@@ -675,7 +676,7 @@ function openCfg(id) {
   $('#cfgName').textContent = a.name;
   document.querySelectorAll('#cfgOpts input[data-k]').forEach(i => { i.checked = !!a.config[i.dataset.k]; });
   updateGroupCounts();
-  $('#cPoll').value = a.config.farmPollMaxMin; $('#cStealMax').value = a.config.stealMax; $('#cCareMax').value = a.config.careMax; $('#cPastureInt').value = a.config.pastureIntervalMin; $('#cPastureFeedInt').value = a.config.pastureFeedIntervalMin ?? 210;
+  $('#cPoll').value = a.config.farmPollMaxMin; $('#cStealMax').value = a.config.stealMax; $('#cCareMax').value = a.config.careMax; $('#cCareWaterWorkers').value = a.config.careWaterWorkers ?? 1; $('#cPastureInt').value = a.config.pastureIntervalMin; $('#cPastureFeedInt').value = a.config.pastureFeedIntervalMin ?? 210;
   $('#cPioScene').value = a.config.pioneerScene || 1; $('#cPioAction').value = a.config.pioneerAction || 4;
   const wts = (a.config.petTrainWts && a.config.petTrainWts.length) ? a.config.petTrainWts.map(String) : [String(a.config.petTrainWt || 3)];
   document.querySelectorAll('#cPetTrainWts input').forEach((i) => (i.checked = wts.includes(i.value)));
@@ -708,7 +709,7 @@ function collectCfg() {
   const petTrainWts = [...document.querySelectorAll('#cPetTrainWts input:checked')].map((i) => +i.value);
   if (!petTrainWts.length) petTrainWts.push(3);
   const num = (v, def) => (v === '' || v == null || isNaN(+v) ? def : +v); // 0 是合法值(不限)，不能用 || 兜底(会把0吞成默认值)
-  const config = { farmPollMaxMin: +$('#cPoll').value || 30, sowSeedsId: $('#cSeed').value, stealMax: num($('#cStealMax').value, 10), careMax: num($('#cCareMax').value, 10), pastureIntervalMin: +$('#cPastureInt').value || 120, pastureFeedIntervalMin: +$('#cPastureFeedInt').value || 210, pioneerScene: +$('#cPioScene').value || 1, pioneerAction: +$('#cPioAction').value || 4, petTrainWts, petTrainWt: petTrainWts[0],
+  const config = { farmPollMaxMin: +$('#cPoll').value || 30, sowSeedsId: $('#cSeed').value, stealMax: num($('#cStealMax').value, 10), careMax: num($('#cCareMax').value, 10), careWaterWorkers: Math.max(1, Math.min(8, num($('#cCareWaterWorkers').value, 1))), pastureIntervalMin: +$('#cPastureInt').value || 120, pastureFeedIntervalMin: +$('#cPastureFeedInt').value || 210, pioneerScene: +$('#cPioScene').value || 1, pioneerAction: +$('#cPioAction').value || 4, petTrainWts, petTrainWt: petTrainWts[0],
     grabRoom: +$('#cGrabRoom').value || 696, grabHour: +$('#cGrabHour').value || 0, grabMin: +$('#cGrabMin').value || 0, grabPollSec: Math.max(1, +$('#cGrabPoll').value || 1),
     goldFightMaxLevel: +$('#cGoldMaxLv').value || 29, goldFightPollMaxMin: +$('#cGoldPoll').value || 5, msgWatchIntervalMin: +$('#cMsgWatchInt').value || 60 };
   document.querySelectorAll('#cfgOpts input[data-k]').forEach((i) => (config[i.dataset.k] = i.checked));
@@ -980,7 +981,7 @@ async function doSignin() {
 // Configure existing controls in place: IDs and serialized API fields remain unchanged.
 const CONFIG_GROUPS = [
   ['农场种植', ['harvest','dig','sow','sowAutoBuy','weed','kill','water','muck','farmTasks','sellAll'], ['cPoll','cSeed']],
-  ['好友互动', ['friendLand','steal','careFriends'], ['cStealMax','cCareMax']],
+  ['好友互动', ['friendLand','steal','careFriends'], ['cStealMax','cCareMax','cCareWaterWorkers']],
   ['每日签到', ['farmSignin','groupSignin','qqSignin','pastureDaily','petDaily','goldDaily'], []],
   ['牧场与拓荒', ['pastureLoop','pastureFeed','pioneer'], ['cPastureInt','cPastureFeedInt','cPioScene','cPioAction']],
   ['宠物与圣衣', ['petTrain','goldFight'], ['cPetTrainWts','cGoldMaxLv','cGoldPoll']],

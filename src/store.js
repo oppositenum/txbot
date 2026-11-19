@@ -19,6 +19,7 @@ const DEFAULT_CONFIG = {
   farmTasks: true,       // 自动完成日常任务(taskOrders.do)，库存够就领奖，默认开启
   steal: false, stealMax: 20,     // 0=不限(一次偷完所有可偷)
   careFriends: false, careMax: 0,  // 0=不限(把好友的草/虫/水全部处理完)
+  careWaterWorkers: 1,             // 帮好友浇水时同时处理几个好友(1=串行；大号可设2加速)
   sellAll: false,
   farmPollMaxMin: 5,     // 农场巡检间隔(分钟)：无提醒的任务(除草/偷菜/助友)靠轮询，默认5分钟查一次
   // ===== 多游戏每日（每天0点后一次）默认开启，新账号即自动签到/领取 =====

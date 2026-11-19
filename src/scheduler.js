@@ -395,16 +395,20 @@ async function runCareJob(id) {
   };
 
   // 浇水：响应自带">>给下一块地浇水"直达链接(带下一个landId)，顺着链走完该好友全部待浇地块，
-  // 不用像除草/杀虫那样逐块重查好友地块列表(且好友地块可能远超翻页上限，链式跟随天然不受限)
+  // 不用像除草/杀虫那样逐块重查好友地块列表(且好友地块可能远超翻页上限，链式跟随天然不受限)。
+  // careWaterWorkers>1 时按好友分片并行（同一好友内仍串行跟链；每路独立 FarmClient）。
+  const waterWorkers = Math.max(1, Math.min(8, Math.floor(Number(cfg.careWaterWorkers) || 1)));
   const runWaterPass = async (oper) => {
-    const pc = new FarmClient(acc.cookie, { proxy: acc.proxy });
+    const friends = await new FarmClient(acc.cookie, { proxy: acc.proxy }).getRankAll(oper, 15);
     let n = 0;
-    for (const f of await pc.getRankAll(oper, 15)) {
-      touch();
-      if (n >= cap) break;
+    let next = 0;
+    const takeFriend = () => (next < friends.length ? friends[next++] : null);
+
+    const waterOneFriend = async (pc, f) => {
+      if (n >= cap) return;
       const firstLand = (await pc.getFriendFarm(f.uid, 20)).find((l) => l.needWater);
       touch();
-      if (!firstLand) continue;
+      if (!firstLand) return;
       let link = fix(firstLand.needWater);
       for (let i = 0; i < 100 && link && n < cap; i++) {
         const html = await pc.req(link);
@@ -413,7 +417,20 @@ async function runCareJob(id) {
         link = actionLinks(html, 'water').find((href) => queryValue(href, 'landId') && queryValue(href, 'tuid')) || null;
         if (link) await sleep(100 + Math.random() * 200);
       }
-    }
+    };
+
+    const worker = async () => {
+      const pc = new FarmClient(acc.cookie, { proxy: acc.proxy });
+      for (;;) {
+        if (n >= cap) break;
+        const f = takeFriend();
+        if (!f) break;
+        await waterOneFriend(pc, f);
+      }
+    };
+
+    const pool = Math.min(waterWorkers, Math.max(1, friends.length));
+    await Promise.all(Array.from({ length: friends.length ? pool : 1 }, () => worker()));
     return n;
   };
 
@@ -427,7 +444,8 @@ async function runCareJob(id) {
   const done = settled.filter((r) => r.status === 'fulfilled').map((r) => r.value);
   const failed = settled.flatMap((result, index) => result.status === 'rejected' ? [{ label: tasks[index][0], reason: result.reason }] : []);
   const total = done.reduce((s, [, n]) => s + n, 0);
-  if (total) log(id, '帮好友(并发): ' + done.map(([l, n]) => l + n).join(' '));
+  const waterNote = waterWorkers > 1 ? `[浇水${waterWorkers}路]` : '';
+  if (total) log(id, '帮好友(并发): ' + done.map(([l, n]) => l + n).join(' ') + (waterNote ? ' ' + waterNote : ''));
   if (failed.length) {
     const detail = failed.map(({ label, reason }) => `${label}: ${String(reason?.message || reason).slice(0, 120)}`).join('；');
     log(id, `${total ? '帮好友部分检查失败' : '帮好友巡检失败'}: ${detail}`);

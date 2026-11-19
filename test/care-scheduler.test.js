@@ -228,3 +228,55 @@ test('护理请求失败时记录失败并交给调度器重试', async () => {
   assert.equal(fixture.scheduler.logs.a1.at(-1).msg, '帮好友巡检失败: 浇水: 排行榜超时');
   assert.equal(target.status.jobs.care, undefined);
 });
+
+test('浇水并发数>1时按好友并行浇水', { timeout: 2000 }, async () => {
+  const target = account();
+  target.config.careWaterWorkers = 2;
+  let inflight = 0;
+  let maxInflight = 0;
+  let releaseBoth;
+  const bothStarted = new Promise((resolve) => { releaseBoth = resolve; });
+  const gates = new Map();
+  const fixture = isolatedCareScheduler(target, {
+    rank: (oper) => oper === 3 ? [{ uid: 11 }, { uid: 22 }] : [],
+    farm: (uid) => [{ needWater: `water.do?landId=${uid}&tuid=${uid}` }],
+    request(link) {
+      inflight++;
+      maxInflight = Math.max(maxInflight, inflight);
+      return new Promise((resolve) => {
+        gates.set(link, () => { inflight--; resolve('ok'); });
+        if (gates.size === 2) releaseBoth();
+      });
+    },
+  });
+
+  const job = fixture.scheduler.runCareJob('a1');
+  await bothStarted;
+  assert.equal(maxInflight, 2);
+  assert.deepEqual([...gates.keys()].sort(), ['water.do?landId=11&tuid=11', 'water.do?landId=22&tuid=22']);
+  for (const unlock of gates.values()) unlock();
+  await job;
+  assert.match(fixture.scheduler.logs.a1.at(-1).msg, /帮好友\(并发\): 浇水2 除草0 杀虫0 \[浇水2路\]/);
+  assert.equal(maxInflight, 2);
+});
+
+test('浇水并发数默认1时仍串行处理好友', { timeout: 2000 }, async () => {
+  const target = account();
+  let inflight = 0;
+  let maxInflight = 0;
+  const fixture = isolatedCareScheduler(target, {
+    rank: (oper) => oper === 3 ? [{ uid: 11 }, { uid: 22 }] : [],
+    farm: (uid) => [{ needWater: `water.do?landId=${uid}&tuid=${uid}` }],
+    async request(link) {
+      inflight++;
+      maxInflight = Math.max(maxInflight, inflight);
+      await new Promise((r) => setTimeout(r, 20));
+      inflight--;
+      return 'ok';
+    },
+  });
+
+  await fixture.scheduler.runCareJob('a1');
+  assert.equal(maxInflight, 1);
+  assert.match(fixture.scheduler.logs.a1.at(-1).msg, /帮好友\(并发\): 浇水2 除草0 杀虫0$/);
+});
